@@ -982,3 +982,12 @@ kbd {
 .suspects img.silhouette { filter: brightness(0) opacity(0.4); background: none; }
 #btn-phone span { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
 #btn-phone b { font-size: 0.62rem; font-weight: 800; color: var(--ink-2); }
+
+/* --------------------------------------------------------------- 味方 */
+.hud-ally { font-family: var(--ui); font-weight: 800; font-size: 0.8rem; gap: 6px; background: #e3f7fb; }
+.hud-ally img { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--ink); background: #bfe9f2; }
+.ally-card { border-color: #1f8aa0; background: #f0fbfd; }
+.ally-card b em { font-style: normal; font-size: 0.68rem; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: #2fb3c9; color: #fff; vertical-align: 2px; }
+.bubble.ally { background: #e3f7fb; border-color: #1f8aa0; box-shadow: 0 3px 0 #1f8aa0; }
+.bubble.ally::after { border-color: #1f8aa0; }
+@media (max-width: 640px) { .hud-ally { font-size: 0; padding: 0 6px; } }

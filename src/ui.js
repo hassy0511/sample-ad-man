@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAST } from './cast.js';
+import { CAST, ALLY } from './cast.js';
 import { fmtClock } from './util.js';
 
 const $ = (id) => document.getElementById(id);
@@ -135,7 +135,7 @@ export class UI {
   }
 
   // --- ステージ説明 ---------------------------------------------------------
-  intro(stage, types, onGo, onBack) {
+  intro(stage, types, onGo, onBack, hasAlly = false) {
     $('intro-stage').textContent = `${stage.label} ・ ${stage.period} ${fmtClock(stage.start)}`;
     $('intro-title').textContent = stage.title;
     $('intro-brief').textContent = stage.brief;
@@ -157,6 +157,17 @@ export class UI {
         <small>${c.role}　${c.name}</small>
         <span class="danger" aria-label="危険度${c.power}">${dots}</span>
         <p>${c.trait}</p>`;
+      ul.appendChild(li);
+    }
+    if (hasAlly) {
+      const li = document.createElement('li');
+      li.className = 'cast-card ally-card';
+      li.innerHTML = `
+        <img src="${this.portraits.ally || ''}" alt="" style="--c:${ALLY.tint}33">
+        <b>${ALLY.nick}<em>味方</em></b>
+        <small>${ALLY.role}　${ALLY.name}</small>
+        <span></span>
+        <p>${ALLY.trait}</p>`;
       ul.appendChild(li);
     }
     $('btn-go').onclick = onGo;
@@ -212,6 +223,12 @@ export class UI {
       this.lastPapers = papers;
     }
     $('btn-dash').style.setProperty('--cd', dashCd.toFixed(3));
+  }
+
+  setAlly(on, portrait) {
+    const el = $('hud-ally');
+    el.hidden = !on;
+    if (on && portrait) $('hud-ally-img').src = portrait;
   }
 
   setRally(rally, idx, label) {

@@ -229,6 +229,15 @@ export class Enemy {
     }
   }
 
+  /** エース新人に引き止められる */
+  hold(seconds, withPos) {
+    this.set('held');
+    this.holdT = seconds;
+    this.holdWith = withPos;
+    this.vel.x = this.vel.z = 0;
+    this.wantsCatch = false;
+  }
+
   /** 会話が終わったあと */
   afterTalk() {
     this.cool = this.tune.cooldown || 6;
@@ -271,6 +280,18 @@ export class Enemy {
       return;
     }
     this.wasBehaving = false;
+
+    // エース新人が相手をしている間はその場で話し込む
+    if (this.state === 'held') {
+      this.stop(dt);
+      if (this.holdWith) c.faceDir(this.holdWith.x - this.pos.x, this.holdWith.z - this.pos.z);
+      if (this.cone) this.cone.visible = false;
+      this.ring?.update(this.pos.x, this.pos.z, 0);
+      c.pose = 'talk';
+      this.idle(dt);
+      if (this.t > this.holdT) this.afterTalk();
+      return;
+    }
 
     switch (this.type) {
       case 'senpai':

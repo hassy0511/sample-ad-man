@@ -151,6 +151,7 @@ export class World {
         if (c === 'P') this.spawns.player = { x: x + 0.5, z: y + 0.5 };
         else if (c === 'G') this.spawns.goal = { x: x + 0.5, z: y + 0.5 };
         else if (c === 'C') this.spawns.pickups.push({ x: x + 0.5, z: y + 0.5 });
+        else if (c === 'A') this.spawns.ally = { x: x + 0.5, z: y + 0.5 };
         else if (ENEMY_CODES[c]) {
           order[c] = order[c] || 0;
           this.spawns.enemies.push({ code: Number(c), type: ENEMY_CODES[c], x: x + 0.5, z: y + 0.5, index: order[c]++ });

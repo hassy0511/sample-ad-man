@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { STAGES, CHAPTERS } from './levels.js';
-import { CAST, BOSS, PLAYER_LOOK, GOAL_NPC, RALLY_REJECT } from './cast.js';
+import { CAST, BOSS, PLAYER_LOOK, GOAL_NPC, RALLY_REJECT, ALLY } from './cast.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { Enemy } from './enemies.js';
@@ -12,6 +12,7 @@ import { Audio } from './audio.js';
 import { UI } from './ui.js';
 import { Post } from './post.js';
 import { setupPwa } from './pwa.js';
+import { Ally } from './ally.js';
 import { clamp, damp, lerp, smooth, pick } from './util.js';
 
 const RANK_ORDER = ['C', 'B', 'A', 'S'];
@@ -141,6 +142,7 @@ class Game {
     const looks = Object.fromEntries(Object.entries(CAST).map(([k, v]) => [k, v.look]));
     looks.boss = BOSS.look;
     looks.kacho = GOAL_NPC.kacho.look;
+    looks.ally = ALLY.look;
     looks.jomu = GOAL_NPC.jomu.look;
     looks.player = PLAYER_LOOK;
     try {
@@ -193,6 +195,9 @@ class Game {
       this.scene.add(b.root);
       this.boss = b;
     }
+
+    // 味方のエース新人
+    this.ally = this.world.spawns.ally && !demo ? new Ally(this, this.world.spawns.ally) : null;
 
     // ハンコラリーの決裁者
     this.rally = null;
@@ -272,6 +277,8 @@ class Game {
     this.enemies = [];
     this.player?.dispose();
     this.player = null;
+    this.ally?.dispose();
+    this.ally = null;
     for (const r of this.rally || []) {
       r.char.root.removeFromParent();
       for (const m of r.char.meshes) m.geometry.dispose();
@@ -345,7 +352,7 @@ class Game {
       this.introT = 0;
       const types = [...new Set(this.world.spawns.enemies.map((e) => e.type))]
         .sort((a, b) => CAST[b].power - CAST[a].power);
-      this.ui.intro(STAGES[i], types, () => this.startStage(), () => this.toTitle());
+      this.ui.intro(STAGES[i], types, () => this.startStage(), () => this.toTitle(), !!this.world.spawns.ally);
       this.audio.startMusic('title', 96);
     };
     this.ui.loading(true);
@@ -361,6 +368,7 @@ class Game {
     this.audio.click();
     this.ui.show(null);
     this.ui.hud(true, this.stage);
+    this.ui.setAlly(false);
     for (const e of this.enemies) this.record('met', e.type);
     if (this.rally) this.ui.setRally(this.rally, 0, `${this.rally[0].label}席`);
     this.state = 'flyover';
@@ -450,6 +458,7 @@ class Game {
     this.world.update(dt, this.time, this.clock, P ? P.pos : null);
     if (this.world.playerLight && P) this.world.playerLight.position.set(P.pos.x, 2.6, P.pos.z + 0.4);
     for (const r of this.rally || []) r.char.update(dt);
+    this.ally?.update(dt);
     this.fx.update(dt);
     this.updateCamera(dt);
   }
@@ -621,6 +630,14 @@ class Game {
     this.slowT = 0.12;
   }
 
+  onAllyJoin() {
+    const P = this.player;
+    this.ui.float(P.pos.x, 2.4, P.pos.z, 'エース新人が仲間になった！', 'good');
+    this.fx.sparkle(this.ally.pos.x, 1, this.ally.pos.z, 16);
+    this.audio.sparkle();
+    this.ui.setAlly(true, this.ui.portraits.ally);
+  }
+
   onShinjinTrip(e) {
     this.record('dodged', 'shinjin');
     this.dodges++;
@@ -686,6 +703,19 @@ class Game {
 
   // --- 会話 -----------------------------------------------------------------
   startTalk(e, called = false) {
+    // エース新人が一度だけ身代わりになる
+    if (this.ally?.state === 'follow') {
+      const P = this.player;
+      this.ally.intercept(e);
+      P.invulnT = 2;
+      this.dodges++;
+      this.record('dodged', e.type);
+      this.ui.float(P.pos.x, 2.4, P.pos.z, 'エース新人が身代わりに！', 'good');
+      this.fx.sparkle(P.pos.x, 1, P.pos.z, 14);
+      this.audio.sparkle();
+      this.ui.setAlly(false);
+      return;
+    }
     this.record('caught', e.type);
     const P = this.player;
     this.state = 'talk';

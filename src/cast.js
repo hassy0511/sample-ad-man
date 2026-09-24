@@ -388,3 +388,29 @@ export const RALLY_REJECT = {
   jomu: ['……ん？部長のハンコがないね。', '順番、大事だよ。'],
   kacho: ['もう押したよ？次、行っといで。'],
 };
+
+// 味方：エース新人（見つけると一度だけ身代わりになってくれる）
+export const ALLY = {
+  name: '早瀬くん',
+  role: '営業部 新人',
+  nick: 'エース新人',
+  trait: 'フロアのどこかにいる期待の新人。話しかけると仲間になり、捕まりそうなときに一度だけ身代わりになってくれる。',
+  tint: '#2fb3c9',
+  look: {
+    skin: '#f3cdb2',
+    hair: { style: 'slick', color: '#2a1f1a' },
+    top: { type: 'suit', color: '#1f4e79' },
+    shirt: '#ffffff',
+    tie: '#2fb3c9',
+    bottom: { type: 'pants', color: '#1f4e79' },
+    shoes: '#1a1a1a',
+    brows: 'normal',
+    cheeks: true,
+    scale: 0.95,
+    prop: { left: 'notebook' },
+  },
+  waiting: ['先輩！お供します！', '先輩、今どちらへ？', 'お手伝いできること、ありますか！'],
+  join: ['お供します！何かあったら任せてください！', '先輩の背中、見て学びます！'],
+  intercept: ['先輩は今忙しいので！僕が伺います！', 'その件、僕がお聞きします！', '先輩！ここは僕に任せて！'],
+  reaction: ['お、君は新人の…じゃあ君に話そう', 'ほう、元気がいいね。聞いてくれる？', '……じゃあ、あなたに説明します'],
+};
