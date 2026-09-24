@@ -980,3 +980,5 @@ kbd {
   .book-list { grid-template-columns: 1fr; }
 }
 .suspects img.silhouette { filter: brightness(0) opacity(0.4); background: none; }
+#btn-phone span { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+#btn-phone b { font-size: 0.62rem; font-weight: 800; color: var(--ink-2); }

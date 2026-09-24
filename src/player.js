@@ -16,7 +16,8 @@ export const DASH_TIME = 0.2;
 export const DASH_SPEED = 13.5;
 export const DASH_COOLDOWN = 0.95;
 export const PHONE_TIME = 3.5;
-export const PHONE_COOLDOWN = 11;
+export const PHONE_COOLDOWN = 4;
+export const PHONE_USES = 2;
 export const BOOST_TIME = 6;
 
 export class Player {
@@ -39,6 +40,7 @@ export class Player {
     this.frozen = false;
     this.phoneT = 0;
     this.phoneCD = 0;
+    this.phoneLeft = PHONE_USES;
     this.boostT = 0;
     this.bowing = false;
     this.facing = new THREE.Vector2(0, -1);
@@ -124,6 +126,7 @@ export class Player {
   }
 
   startPhone() {
+    this.phoneLeft--;
     this.phoneT = PHONE_TIME;
     this.phoneCD = PHONE_COOLDOWN;
     this.game.audio.phone?.();
@@ -140,7 +143,13 @@ export class Player {
       this.phoneT = Math.max(0, this.phoneT - dt);
       this.boostT = Math.max(0, this.boostT - dt);
     }
-    if (!this.frozen && input.takePhone?.() && this.phoneCD <= 0) this.startPhone();
+    if (!this.frozen && input.takePhone?.() && this.phoneCD <= 0 && this.phoneT <= 0) {
+      if (this.phoneLeft > 0) this.startPhone();
+      else {
+        this.phoneCD = 1.5;
+        this.game.ui.float(this.pos.x, 2.3, this.pos.z, 'もう電話のふりはできない', 'info');
+      }
+    }
     if (this.boostT > 0 && !this.frozen && Math.hypot(this.vel.x, this.vel.y) > 2) {
       this.trailT = (this.trailT || 0) - dt;
       if (this.trailT <= 0) {

@@ -531,7 +531,12 @@ class Game {
     this.audio.setTension(left <= 10);
     this.ui.updateHud(this.clock, stage, P.papers, P.dashCD / 0.95, false);
     this.phoneBtn ??= document.getElementById('btn-phone');
-    this.phoneBtn.style.setProperty('--cd', (P.phoneCD / 11).toFixed(3));
+    this.phoneBtn.style.setProperty('--cd', P.phoneLeft > 0 ? (P.phoneCD / 4).toFixed(3) : '1');
+    if (this.phoneLeftShown !== P.phoneLeft) {
+      this.phoneLeftShown = P.phoneLeft;
+      this.phoneBtn.querySelector('b').textContent = `残り${P.phoneLeft}`;
+      document.getElementById('hint-phone-n').textContent = P.phoneLeft;
+    }
     this.phoneBtn.classList.toggle('on', P.phoneT > 0);
     this.ui.goalPointer(this.camera, this.currentGoal(), true);
 
