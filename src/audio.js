@@ -42,7 +42,7 @@ export class Audio {
       this.sfx.gain.value = 0.55;
       this.sfx.connect(this.master);
       this.bus = c.createGain();
-      this.bus.gain.value = 0.16;
+      this.bus.gain.value = 0.7;
       this.bus.connect(this.master);
       const len = c.sampleRate;
       this.noiseBuf = c.createBuffer(1, len, c.sampleRate);
@@ -50,7 +50,25 @@ export class Audio {
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
       this.timer = setInterval(() => this.schedule(), 25);
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
+    if (!this.primed) {
+      this.primed = true;
+      // iOS：マナースイッチがオンでも鳴るように再生用セッションにする
+      try {
+        if (navigator.audioSession) navigator.audioSession.type = 'playback';
+      } catch (e) { /* 未対応 */ }
+      // iOS：タップ中に無音を1回鳴らしてオーディオを解放する
+      const b = this.ctx.createBuffer(1, 1, 22050);
+      const src = this.ctx.createBufferSource();
+      src.buffer = b;
+      src.connect(this.ctx.destination);
+      src.start(0);
+    }
+    if (this.pending) {
+      const p = this.pending;
+      this.pending = null;
+      this.startMusic(p.style, p.tempo);
+    }
   }
 
   setMuted(m) {
@@ -193,11 +211,14 @@ export class Audio {
 
   // --- BGM -----------------------------------------------------------------
   startMusic(style = 'play', tempo = 112) {
+    // まだ音を出せない（タップ前）なら、解放されたときに始める
+    if (!this.ctx || this.ctx.state !== 'running') this.pending = { style, tempo };
     if (!this.ctx) return;
     this.music = { style, tempo, step: 0, next: this.ctx.currentTime + 0.1 };
   }
   stopMusic() {
     this.music = null;
+    this.pending = null;
   }
   setTension(on) {
     this.tension = on;
@@ -226,19 +247,19 @@ export class Audio {
     // ベース
     if (s === 0 || s === 8 || (s === 14 && !title)) {
       const n = s === 8 ? ch.root + 7 : s === 14 ? ch.root + 5 : ch.root;
-      this.tone(NOTE(n), sd * 3.2, { at: t, type: 'triangle', vol: 0.5, filter: 700, bus: B });
+      this.tone(NOTE(n + 12), sd * 3.2, { at: t, type: 'triangle', vol: 0.34, filter: 1400, bus: B });
     }
     // エレピのコード（裏拍）
     if (s === 6 || s === 14 || (title && s === 2)) {
-      for (const n of ch.tones) this.tone(NOTE(n), sd * 3, { at: t, type: 'sine', vol: 0.11, attack: 0.01, bus: B });
+      for (const n of ch.tones) this.tone(NOTE(n), sd * 3, { at: t, type: 'triangle', vol: 0.1, attack: 0.01, filter: 2600, bus: B });
     }
     // マリンバ風アルペジオ
     if (!title && (s % 4 === 0 || s % 4 === 3) && (step * 7) % 5 !== 0) {
       const n = ch.tones[(step * 3 + bar) % 4] + 12;
-      this.tone(NOTE(n), sd * 1.6, { at: t, type: 'sine', vol: 0.12, attack: 0.002, bus: B });
+      this.tone(NOTE(n), sd * 1.6, { at: t, type: 'triangle', vol: 0.16, attack: 0.002, filter: 3200, bus: B });
     }
     if (title && s % 4 === 0 && bar % 2 === 1) {
-      this.tone(NOTE(MELODY[(step / 4 + bar) % MELODY.length]), sd * 3, { at: t, type: 'triangle', vol: 0.09, bus: B });
+      this.tone(NOTE(MELODY[(step / 4 + bar) % MELODY.length]), sd * 3, { at: t, type: 'triangle', vol: 0.16, bus: B });
     }
     // リズム
     if (!title) {

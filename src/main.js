@@ -68,6 +68,13 @@ class Game {
   }
 
   bindUi() {
+    // 最初のタップ／キー入力で音を解放する（ブラウザの自動再生制限対策）
+    const unlock = () => this.audio.unlock();
+    addEventListener('pointerdown', unlock, true);
+    addEventListener('keydown', unlock, true);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.audio.ctx) this.audio.unlock();
+    });
     const soundToggle = () => {
       this.audio.unlock();
       this.audio.setMuted(!this.audio.muted);
