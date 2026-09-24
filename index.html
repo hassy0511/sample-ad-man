@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>スルスル営業マン</title>
 <meta name="description" content="広告代理店の営業マンが「ちょっといい？」をかわしてオフィスを駆け抜ける3Dアクション">
+<meta name="theme-color" content="#1b2340">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="スルスル">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap">
@@ -98,6 +106,10 @@
       <h2>社内の要注意人物</h2>
       <ul id="suspect-list"></ul>
     </aside>
+    <button id="btn-install" class="install-btn" type="button" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M5 17v3h14v-3"/></svg>
+      ホーム画面に追加
+    </button>
     <button id="btn-sound-title" class="icon-btn sound-corner" aria-label="サウンド切り替え"><span class="snd-on">♪</span><span class="snd-off">×</span></button>
   </section>
 
@@ -167,6 +179,26 @@
       <button id="btn-pause-title" class="btn ghost">タイトルへ</button>
     </div>
   </section>
+
+  <!-- ホーム画面に追加の案内 -->
+  <div id="install-sheet" class="install-sheet" hidden>
+    <div class="install-card" role="dialog" aria-labelledby="install-title">
+      <img src="icons/icon-192.png" alt="" width="72" height="72">
+      <h2 id="install-title">アプリみたいに遊ぶ</h2>
+      <ol id="install-ios">
+        <li>画面下の <b>共有ボタン</b>（□に↑）をタップ</li>
+        <li><b>「ホーム画面に追加」</b>を選ぶ</li>
+        <li>ホームの「スルスル」アイコンから起動</li>
+      </ol>
+      <ol id="install-android" hidden>
+        <li>ブラウザ右上の <b>︙メニュー</b>を開く</li>
+        <li><b>「ホーム画面に追加」</b>または<b>「アプリをインストール」</b>を選ぶ</li>
+        <li>ホームの「スルスル」アイコンから起動</li>
+      </ol>
+      <p>全画面で起動し、一度開けば電波がなくても遊べます。</p>
+      <button id="install-close" class="btn primary" type="button">わかった</button>
+    </div>
+  </div>
 
   <div id="loading"><div class="loading-card"><span class="spinner"></span><p>出社中…</p></div></div>
   <noscript><p class="noscript">このゲームを遊ぶには JavaScript を有効にしてください。</p></noscript>

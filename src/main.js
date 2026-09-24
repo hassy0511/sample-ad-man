@@ -11,6 +11,7 @@ import { Input } from './input.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
 import { Post } from './post.js';
+import { setupPwa } from './pwa.js';
 import { clamp, damp, lerp, smooth, pick } from './util.js';
 
 const RANK_ORDER = ['C', 'B', 'A', 'S'];
@@ -998,6 +999,7 @@ Game.prototype.step = function step(seconds, dt = 1 / 30) {
   }
 };
 
+setupPwa();
 const game = new Game();
 window.__game = game;
 game.boot();

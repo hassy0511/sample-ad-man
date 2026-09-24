@@ -48,6 +48,15 @@ npx serve .
 
 ブラウザで <http://localhost:8000> を開きます。Three.js（r186）は jsDelivr から、フォント（Dela Gothic One / M PLUS Rounded 1c）は Google Fonts から読み込みます。
 
+## スマホでアプリのように遊ぶ（ホーム画面に追加）
+
+PWA に対応しています。HTTPS で公開したページをスマホで開き、ホーム画面に追加すると、アイコンから全画面で起動できます。一度開けばオフラインでも遊べます。
+
+- iPhone（Safari）: 共有ボタン →「ホーム画面に追加」
+- Android（Chrome）: タイトル画面の「ホーム画面に追加」ボタン、またはメニュー →「アプリをインストール」
+
+公開には GitHub Pages が手軽です。リポジトリの Settings → Pages で、Source を「Deploy from a branch」、Branch を `main` と `/(root)` にして保存すると、`https://<ユーザー名>.github.io/sample-ad-man/` で公開されます。
+
 ## ファイル構成
 
 ```
@@ -68,6 +77,10 @@ src/
   audio.js        Web Audio で合成する効果音と BGM
   ui.js           DOM の HUD・吹き出し・画面
   input.js        キーボードとバーチャルスティック
+  pwa.js          ホーム画面への追加と Service Worker の登録
+manifest.webmanifest  アプリ名・アイコン・全画面表示の設定
+sw.js             オフライン用のキャッシュ
+icons/            アプリアイコン
 ```
 
 地図は `src/levels.js` の文字列を書き換えるだけで編集できます（記号の意味はファイル冒頭に記載）。
