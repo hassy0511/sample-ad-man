@@ -1,0 +1,613 @@
+import * as THREE from 'three';
+import { Character } from './characters.js';
+import { CAST } from './cast.js';
+import { VisionCone, RangeRing } from './effects.js';
+import { clamp, damp, pick, wrapAngle } from './util.js';
+
+const TUNING = {
+  senpai: { notice: 3.0, chase: 3.25, chaseMax: 4.2, lose: 8, cooldown: 9 },
+  keiri: { fov: 1.45, range: 6.8, patrol: 1.5, chase: 4.4, chaseMax: 10, lose: 13, losLost: 2.3, aura: 2.7, auraSlow: 0.7, cooldown: 8 },
+  mtg: { fov: 1.2, range: 5.6, patrol: 1.85, chase: 3.8, chaseMax: 5.5, lose: 9, losLost: 1.5, cooldown: 8 },
+  shorui: { range: 8.5, interval: 1.9, cooldown: 3 },
+  shinjin: { notice: 3.4, follow: 11, shoutEvery: 2.6, shoutR: 7.5, cooldown: 10 },
+  kanji: { speed: 3.5, sense: 10, cooldown: 3.5 },
+};
+
+const _dir = { x: 0, z: 0 };
+
+export class Enemy {
+  constructor(game, spawn, patrol) {
+    this.game = game;
+    this.type = spawn.type;
+    this.cfg = CAST[this.type];
+    this.tune = TUNING[this.type];
+    this.char = new Character(this.cfg.look, { outline: true });
+    this.pos = new THREE.Vector3(spawn.x, 0, spawn.z);
+    this.home = { x: spawn.x, z: spawn.z };
+    this.vel = { x: 0, z: 0 };
+    this.r = 0.3;
+    this.t = 0;
+    this.cool = 0;
+    this.lineT = 1 + Math.random() * 2;
+    this.lostT = 0;
+    this.nearMissed = false;
+    this.patrol = patrol ? patrol.map(([x, z]) => ({ x: x + 0.5, z: z + 0.5 })) : null;
+    this.pi = 0;
+    this.pdir = 1;
+    this.bubble = null;
+    this.game.scene.add(this.char.root);
+
+    const grid = game.world.grid;
+    // 通路側を向いて立つ
+    let best = 0;
+    let bestD = -1;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const d = grid.sightDistance(spawn.x, spawn.z, Math.sin(a), Math.cos(a), 6);
+      if (d > bestD + 0.01) {
+        bestD = d;
+        best = a;
+      }
+    }
+    this.homeYaw = best;
+    this.char.setYaw(best);
+
+    if (this.type === 'keiri' || this.type === 'mtg') {
+      this.cone = new VisionCone(game.scene, this.type === 'keiri' ? '#ff4b3a' : '#ffd23f');
+      this.state = this.patrol ? 'patrol' : 'stand';
+      if (this.patrol) this.pi = this.nearestWaypoint();
+    } else if (this.type === 'senpai' || this.type === 'shinjin') {
+      this.ring = new RangeRing(game.scene, this.type === 'senpai' ? '#f0a23b' : '#3aa56c', this.tune.notice);
+      this.state = 'idle';
+    } else if (this.type === 'kanji') {
+      this.state = 'guard';
+      this.guard = game.stage.guard || { axis: 'z', min: spawn.z - 3, max: spawn.z + 3 };
+    } else {
+      this.state = 'idle';
+      this.throwT = 0.5 + Math.random();
+    }
+    this.char.root.position.copy(this.pos);
+  }
+
+  get player() {
+    return this.game.player;
+  }
+
+  nearestWaypoint() {
+    let bi = 0;
+    let bd = Infinity;
+    this.patrol.forEach((p, i) => {
+      const d = Math.hypot(p.x - this.pos.x, p.z - this.pos.z);
+      if (d < bd) {
+        bd = d;
+        bi = i;
+      }
+    });
+    return bi;
+  }
+
+  set(state) {
+    this.state = state;
+    this.t = 0;
+  }
+
+  say(text, style = '', dur = 1.6) {
+    this.game.ui.bubble(this, text, style || this.type, dur);
+  }
+
+  distToPlayer() {
+    return Math.hypot(this.player.pos.x - this.pos.x, this.player.pos.z - this.pos.z);
+  }
+
+  sees(range, fov, yaw) {
+    const p = this.player;
+    const dx = p.pos.x - this.pos.x;
+    const dz = p.pos.z - this.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d > range) return false;
+    if (fov < Math.PI * 2) {
+      const a = Math.atan2(dx, dz);
+      if (Math.abs(wrapAngle(a - yaw)) > fov / 2 && d > 1.2) return false;
+    }
+    return this.game.world.grid.los(this.pos.x, this.pos.z, p.pos.x, p.pos.z);
+  }
+
+  /** 目標地点へ移動（見通せれば直進、だめなら距離マップを下る） */
+  moveTo(tx, tz, speed, dt, field = null) {
+    const grid = this.game.world.grid;
+    let dx = tx - this.pos.x;
+    let dz = tz - this.pos.z;
+    const d = Math.hypot(dx, dz);
+    let wantX = 0;
+    let wantZ = 0;
+    if (d > 0.05) {
+      if (grid.clearPath(this.pos.x, this.pos.z, tx, tz, this.r * 0.9)) {
+        wantX = dx / d;
+        wantZ = dz / d;
+      } else {
+        const f = field || grid.field(Math.floor(tx), Math.floor(tz));
+        const dir = grid.flowDir(f, this.pos.x, this.pos.z, _dir);
+        if (dir) {
+          wantX = dir.x;
+          wantZ = dir.z;
+        } else {
+          wantX = dx / d;
+          wantZ = dz / d;
+        }
+      }
+    }
+    const sp = Math.min(speed, d * 6);
+    this.vel.x = damp(this.vel.x, wantX * sp, 10, dt);
+    this.vel.z = damp(this.vel.z, wantZ * sp, 10, dt);
+    this.pos.x += this.vel.x * dt;
+    this.pos.z += this.vel.z * dt;
+    grid.resolveCircle(this.pos, this.r);
+    return d;
+  }
+
+  stop(dt) {
+    this.vel.x = damp(this.vel.x, 0, 12, dt);
+    this.vel.z = damp(this.vel.z, 0, 12, dt);
+    this.pos.x += this.vel.x * dt;
+    this.pos.z += this.vel.z * dt;
+    this.game.world.grid.resolveCircle(this.pos, this.r);
+  }
+
+  facePlayer() {
+    this.char.faceDir(this.player.pos.x - this.pos.x, this.player.pos.z - this.pos.z);
+  }
+
+  /** つかまえられる状態か */
+  get canCatch() {
+    if (this.cool > 0) return false;
+    switch (this.type) {
+      case 'senpai': return ['idle', 'notice', 'chase', 'return'].includes(this.state);
+      case 'keiri':
+      case 'mtg': return ['patrol', 'stand', 'spotted', 'chase', 'resume'].includes(this.state);
+      case 'kanji': return this.state === 'guard';
+      default: return false;
+    }
+  }
+
+  get chasing() {
+    return this.state === 'chase' || (this.type === 'kanji' && this.state === 'guard' && this.distToPlayer() < 5);
+  }
+
+  alert() {
+    if (this.cool > 0) return;
+    if (this.type === 'senpai' && (this.state === 'idle' || this.state === 'return')) this.notice();
+    else if ((this.type === 'keiri' || this.type === 'mtg') && ['patrol', 'stand', 'resume'].includes(this.state)) this.spot();
+    else if (this.type === 'shorui' && this.state === 'idle') this.throwT = 0;
+  }
+
+  notice() {
+    this.set('notice');
+    this.say(pick(Math.random, this.cfg.notice), '', 1.5);
+    this.game.ui.emote(this, '！');
+    this.game.audio.notice(this.cfg.voice.freq);
+    this.char.play('hop');
+    this.char.setMood('surprised');
+  }
+
+  spot() {
+    this.set('spotted');
+    const keiri = this.type === 'keiri';
+    this.say(pick(Math.random, this.cfg.notice), keiri ? 'keiri shout' : 'mtg', 1.6);
+    this.game.ui.emote(this, keiri ? '！！' : '！');
+    this.char.play('jump');
+    this.char.setMood(keiri ? 'shout' : 'surprised');
+    if (keiri) {
+      this.game.shake(0.35);
+      this.game.ui.flash('rgba(224,64,47,0.28)');
+      this.game.audio.alarm();
+      this.game.fx.ring(this.pos.x, this.pos.z, '#ff4b3a', 3.5, 0.5);
+    } else {
+      this.game.audio.notice(this.cfg.voice.freq);
+    }
+  }
+
+  /** 会話が終わったあと */
+  afterTalk() {
+    this.cool = this.tune.cooldown || 6;
+    this.char.setMood('happy');
+    if (this.cfg.after) this.say(pick(Math.random, this.cfg.after), '', 1.8);
+    this.char.pose = this.type === 'kanji' ? 'dance' : 'idle';
+    if (this.type === 'senpai') this.set('return');
+    else if (this.type === 'keiri' || this.type === 'mtg') this.set(this.patrol ? 'resume' : 'stand');
+    else if (this.type === 'kanji') this.set('guard');
+    this.nearMissed = false;
+  }
+
+  update(dt) {
+    const c = this.char;
+    this.t += dt;
+    this.cool = Math.max(0, this.cool - dt);
+    if (this.cool <= 0 && c.mood === 'happy' && this.type !== 'kanji') c.setMood('normal');
+    const hidden = this.game.playerHidden;
+    const dist = this.distToPlayer();
+    let pose = 'idle';
+
+    switch (this.type) {
+      case 'senpai':
+        pose = this.updateSenpai(dt, dist, hidden);
+        break;
+      case 'keiri':
+      case 'mtg':
+        pose = this.updatePatroller(dt, dist, hidden);
+        break;
+      case 'shorui':
+        pose = this.updateShorui(dt, dist, hidden);
+        break;
+      case 'shinjin':
+        pose = this.updateShinjin(dt, dist, hidden);
+        break;
+      case 'kanji':
+        pose = this.updateKanji(dt, dist, hidden);
+        break;
+      default:
+        break;
+    }
+    if (this.state !== 'chase') this.nearMissed = false;
+
+    if (c.pose !== 'down') c.pose = pose;
+    c.root.position.set(this.pos.x, 0, this.pos.z);
+    const spd = Math.hypot(this.vel.x, this.vel.z);
+    c.speed = spd;
+    if (spd > 0.25 && this.state !== 'notice' && this.state !== 'spotted') c.faceDir(this.vel.x, this.vel.z);
+    c.update(dt);
+  }
+
+  // --- ちょっといい先輩 -------------------------------------------------------
+  updateSenpai(dt, dist, hidden) {
+    const T = this.tune;
+    const c = this.char;
+    switch (this.state) {
+      case 'idle': {
+        this.stop(dt);
+        c.headYaw = Math.sin(this.t * 0.8) * 0.5;
+        c.targetYaw = this.homeYaw;
+        if (!hidden && this.cool <= 0 && this.sees(T.notice, Math.PI * 2, 0)) this.notice();
+        this.ring?.update(this.pos.x, this.pos.z, this.cool > 0 ? 0 : clamp(1 - (dist - T.notice) / 4, 0, 1) * 0.55);
+        return 'idle';
+      }
+      case 'notice':
+        this.stop(dt);
+        this.facePlayer();
+        this.ring?.update(this.pos.x, this.pos.z, 0.6);
+        if (this.t > 0.35) {
+          this.set('chase');
+          c.setMood('happy');
+        }
+        return 'shock';
+      case 'chase': {
+        this.ring?.update(this.pos.x, this.pos.z, 0);
+        this.moveTo(this.player.pos.x, this.player.pos.z, T.chase, dt, this.game.playerField);
+        c.headYaw = 0;
+        if (hidden || this.t > T.chaseMax || dist > T.lose) {
+          this.say(pick(Math.random, this.cfg.giveup), '', 1.6);
+          c.setMood('normal');
+          this.cool = 2.5;
+          this.set('return');
+        }
+        return 'reach';
+      }
+      case 'return': {
+        this.ring?.update(this.pos.x, this.pos.z, 0);
+        const d = this.moveTo(this.home.x, this.home.z, 1.7, dt);
+        if (d < 0.15) this.set('idle');
+        return 'idle';
+      }
+      default:
+        return 'idle';
+    }
+  }
+
+  // --- 経理の鬼 / MTG課長（巡回＋視界コーン） ----------------------------------
+  updatePatroller(dt, dist, hidden) {
+    const T = this.tune;
+    const c = this.char;
+    const keiri = this.type === 'keiri';
+    let pose = 'idle';
+    let coneOn = true;
+    let intensity = this.cool > 0 ? 0.35 : 1;
+    switch (this.state) {
+      case 'stand':
+        this.stop(dt);
+        c.headYaw = Math.sin(this.t * 0.9) * 0.7;
+        c.targetYaw = this.homeYaw;
+        break;
+      case 'patrol': {
+        const wp = this.patrol[this.pi];
+        const d = this.moveTo(wp.x, wp.z, T.patrol, dt);
+        c.headYaw = Math.sin(this.t * 1.3) * 0.55;
+        if (d < 0.2) {
+          if (this.patrol.length === 2) {
+            this.pi = this.pi === 0 ? 1 : 0;
+          } else {
+            this.pi = (this.pi + 1) % this.patrol.length;
+          }
+          this.set('look');
+        }
+        break;
+      }
+      case 'look':
+        this.stop(dt);
+        c.headYaw = Math.sin(this.t * 3) * 0.9;
+        if (this.t > 0.8) this.set('patrol');
+        break;
+      case 'spotted':
+        this.stop(dt);
+        this.facePlayer();
+        c.headYaw = 0;
+        intensity = 1.5;
+        pose = 'shock';
+        if (this.t > (keiri ? 0.4 : 0.45)) {
+          this.set('chase');
+          this.lostT = 0;
+        }
+        break;
+      case 'chase': {
+        coneOn = false;
+        c.headYaw = 0;
+        this.moveTo(this.player.pos.x, this.player.pos.z, T.chase, dt, this.game.playerField);
+        const seen = !hidden && this.game.world.grid.los(this.pos.x, this.pos.z, this.player.pos.x, this.player.pos.z);
+        this.lostT = seen ? 0 : this.lostT + dt;
+        if (keiri) {
+          c.setMood('shout');
+          if (!hidden && dist < T.aura) {
+            this.player.aura = Math.min(this.player.aura, T.auraSlow);
+            this.game.auraLevel = Math.max(this.game.auraLevel, 1 - dist / T.aura);
+          }
+          this.lineT -= dt;
+          if (this.lineT < 0) {
+            this.lineT = 1.6 + Math.random();
+            this.say(pick(Math.random, ['待ちなさい！！', '領収書！！', '今日締めです！！', 'ちょっと！！']), 'keiri shout', 1.1);
+          }
+        }
+        if (hidden || this.t > T.chaseMax || dist > T.lose || this.lostT > T.losLost) {
+          this.say(pick(Math.random, this.cfg.giveup), '', 1.8);
+          c.setMood(keiri ? 'angry' : 'normal');
+          this.cool = 2.5;
+          this.set(this.patrol ? 'resume' : 'stand');
+          if (this.patrol) this.pi = this.nearestWaypoint();
+        }
+        pose = 'reach';
+        break;
+      }
+      case 'resume': {
+        const wp = this.patrol ? this.patrol[this.pi] : this.home;
+        const d = this.moveTo(wp.x, wp.z, T.patrol * 1.1, dt);
+        c.headYaw = 0;
+        if (d < 0.25) this.set(this.patrol ? 'patrol' : 'stand');
+        break;
+      }
+      default:
+        break;
+    }
+    if (!hidden && this.cool <= 0 && ['patrol', 'stand', 'look', 'resume'].includes(this.state)) {
+      const yaw = this.char.yaw + c.head.rotation.y;
+      if (this.sees(T.range, T.fov, yaw) || dist < 1.0) this.spot();
+    }
+    if (this.cone) {
+      this.cone.visible = coneOn;
+      if (coneOn) this.cone.update(this.game.world.grid, this.pos.x, this.pos.z, this.char.yaw + c.head.rotation.y, T.fov, T.range, intensity);
+    }
+    return pose;
+  }
+
+  // --- 書類おじさん ---------------------------------------------------------
+  updateShorui(dt, dist, hidden) {
+    const T = this.tune;
+    const c = this.char;
+    this.stop(dt);
+    if (this.state === 'idle') {
+      c.targetYaw = this.homeYaw;
+      c.headYaw = Math.sin(this.t * 0.7) * 0.4;
+      this.throwT -= dt;
+      if (!hidden && this.cool <= 0 && this.throwT <= 0 && dist < T.range && this.sees(T.range, Math.PI * 2, 0)) {
+        this.set('aim');
+        this.say(pick(Math.random, this.cfg.throwLines), '', 1.3);
+        c.setMood('happy');
+      }
+      return 'idle';
+    }
+    if (this.state === 'aim') {
+      this.facePlayer();
+      c.headYaw = 0;
+      if (this.t > 0.42) {
+        this.throwAt();
+        this.set('idle');
+        this.throwT = T.interval + Math.random() * 0.6;
+        c.setMood('normal');
+      }
+      return 'idle';
+    }
+    return 'idle';
+  }
+
+  throwAt() {
+    const p = this.player;
+    const dist = this.distToPlayer();
+    const T = 0.55 + dist * 0.06;
+    const lead = 0.85;
+    let tx = p.pos.x + p.vel.x * T * lead + (Math.random() - 0.5) * 0.5;
+    let tz = p.pos.z + p.vel.y * T * lead + (Math.random() - 0.5) * 0.5;
+    const grid = this.game.world.grid;
+    tx = clamp(tx, 1, grid.w - 1);
+    tz = clamp(tz, 1, grid.h - 1);
+    this.char.play('throw');
+    const from = new THREE.Vector3(this.pos.x, 1.2, this.pos.z);
+    this.game.audio.whoosh();
+    setTimeout(() => {
+      if (!this.game.world) return;
+      this.game.fx.throwPaper(from, new THREE.Vector3(tx, 0.05, tz), T, (to) => this.game.paperLanded(to, this));
+    }, 160);
+  }
+
+  // --- 新人くん -------------------------------------------------------------
+  updateShinjin(dt, dist, hidden) {
+    const T = this.tune;
+    const c = this.char;
+    const p = this.player;
+    switch (this.state) {
+      case 'idle':
+        this.stop(dt);
+        c.targetYaw = this.homeYaw;
+        this.ring?.update(this.pos.x, this.pos.z, this.cool > 0 ? 0 : clamp(1 - (dist - T.notice) / 4, 0, 1) * 0.5);
+        if (!hidden && this.cool <= 0 && this.sees(T.notice, Math.PI * 2, 0)) {
+          this.set('notice');
+          this.say(pick(Math.random, this.cfg.notice), 'shinjin', 1.4);
+          this.game.ui.emote(this, '！');
+          this.game.audio.notice(this.cfg.voice.freq);
+          c.play('jump');
+          c.setMood('happy');
+        }
+        return 'idle';
+      case 'notice':
+        this.stop(dt);
+        this.facePlayer();
+        this.ring?.update(this.pos.x, this.pos.z, 0);
+        if (this.t > 0.35) {
+          this.set('follow');
+          this.shoutT = 0.9;
+        }
+        return 'cheer';
+      case 'follow': {
+        const dx = p.pos.x - this.pos.x;
+        const dz = p.pos.z - this.pos.z;
+        const d = Math.hypot(dx, dz) || 1;
+        const tx = p.pos.x - (dx / d) * 1.3;
+        const tz = p.pos.z - (dz / d) * 1.3;
+        const speed = d > 2.2 ? 6.2 : d > 1.5 ? 4.8 : 2;
+        this.moveTo(tx, tz, speed, dt, d > 3 ? this.game.playerField : null);
+        this.shoutT -= dt;
+        if (this.shoutT <= 0 && !hidden) {
+          this.shoutT = T.shoutEvery;
+          this.say(pick(Math.random, this.cfg.shouts), 'shinjin shout', 1.3);
+          this.game.fx.ring(this.pos.x, this.pos.z, '#3aa56c', T.shoutR, 0.9);
+          this.game.audio.shout();
+          this.game.alertAround(this.pos.x, this.pos.z, T.shoutR, this);
+        }
+        if (p.dashing && d < 4.5) {
+          this.set('trip');
+          this.tripDir = { x: dx / d, z: dz / d };
+          return 'reach';
+        }
+        if (this.t > T.follow || hidden || d > 12) {
+          this.say(pick(Math.random, this.cfg.giveup), 'shinjin', 1.5);
+          this.cool = T.cooldown;
+          this.set('return');
+        }
+        return 'reach';
+      }
+      case 'trip': {
+        if (this.t < 0.22) {
+          this.vel.x = this.tripDir.x * 7;
+          this.vel.z = this.tripDir.z * 7;
+          this.pos.x += this.vel.x * dt;
+          this.pos.z += this.vel.z * dt;
+          this.game.world.grid.resolveCircle(this.pos, this.r);
+          return 'reach';
+        }
+        if (!this.tripped) {
+          this.tripped = true;
+          c.play('trip');
+          c.setMood('dizzy');
+          c.stars.visible = true;
+          this.say(pick(Math.random, this.cfg.trip), 'shinjin', 1.4);
+          this.game.fx.dust(this.pos.x, this.pos.z, 10);
+          this.game.fx.papers(this.pos.x, 0.5, this.pos.z, 4, 0.6);
+          this.game.audio.trip();
+          this.game.onShinjinTrip(this);
+        }
+        this.stop(dt);
+        if (this.t > 3) {
+          this.tripped = false;
+          c.pose = 'idle';
+          c.stars.visible = false;
+          c.setMood('normal');
+          this.cool = T.cooldown;
+          this.set('return');
+        }
+        return 'down';
+      }
+      case 'return': {
+        const d = this.moveTo(this.home.x, this.home.z, 2.2, dt);
+        if (d < 0.15) this.set('idle');
+        return 'idle';
+      }
+      default:
+        return 'idle';
+    }
+  }
+
+  // --- 飲み会幹事 -----------------------------------------------------------
+  updateKanji(dt, dist, hidden) {
+    const T = this.tune;
+    const c = this.char;
+    const p = this.player;
+    const g = this.guard;
+    const active = !hidden && this.cool <= 0 && dist < T.sense;
+    let tz = this.home.z;
+    let tx = this.home.x;
+    if (active) {
+      tz = clamp(p.pos.z + p.vel.y * 0.2, g.min + 0.5, g.max + 0.5);
+      tx = this.home.x + clamp((p.pos.x - this.home.x) * 0.15, -0.6, 0.6);
+    }
+    const dz = tz - this.pos.z;
+    const dx = tx - this.pos.x;
+    const want = Math.hypot(dx, dz);
+    const sp = active ? T.speed : 1.2;
+    const k = Math.min(1, want / 0.4);
+    this.vel.x = damp(this.vel.x, (dx / (want || 1)) * sp * k, 9, dt);
+    this.vel.z = damp(this.vel.z, (dz / (want || 1)) * sp * k, 9, dt);
+    this.pos.x += this.vel.x * dt;
+    this.pos.z += this.vel.z * dt;
+    this.game.world.grid.resolveCircle(this.pos, this.r);
+    this.facePlayer();
+    if (active) {
+      this.lineT -= dt;
+      if (this.lineT < 0) {
+        this.lineT = 2.2 + Math.random() * 1.2;
+        this.say(pick(Math.random, this.cfg.guardLines), 'kanji', 1.4);
+      }
+    }
+    c.setMood('happy');
+    return active && dist < 4.5 ? 'block' : 'dance';
+  }
+
+  /** タイトル画面の背景用：巡回だけする */
+  demoUpdate(dt) {
+    const c = this.char;
+    if (this.patrol && (this.type === 'keiri' || this.type === 'mtg')) {
+      const wp = this.patrol[this.pi];
+      const d = this.moveTo(wp.x, wp.z, this.tune.patrol, dt);
+      if (d < 0.2) this.pi = (this.pi + 1) % this.patrol.length;
+      c.headYaw = Math.sin(c.t * 1.3) * 0.55;
+    } else {
+      this.stop(dt);
+      c.headYaw = Math.sin(c.t * 0.6 + this.home.x) * 0.5;
+    }
+    if (this.cone) this.cone.visible = false;
+    this.ring?.update(this.pos.x, this.pos.z, 0);
+    c.pose = this.type === 'kanji' ? 'dance' : 'idle';
+    this.idle(dt);
+  }
+
+  /** 位置の反映とアニメーションだけ（会話中など） */
+  idle(dt) {
+    const c = this.char;
+    c.root.position.set(this.pos.x, 0, this.pos.z);
+    const spd = Math.hypot(this.vel.x, this.vel.z);
+    c.speed = spd;
+    if (spd > 0.25) c.faceDir(this.vel.x, this.vel.z);
+    c.update(dt);
+  }
+
+  dispose() {
+    this.char.root.removeFromParent();
+    for (const m of this.char.meshes) m.geometry.dispose();
+    this.cone?.dispose();
+    this.ring?.dispose();
+  }
+}

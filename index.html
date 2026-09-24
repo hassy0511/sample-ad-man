@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>スルスル営業マン</title>
+<meta name="description" content="広告代理店の営業マンが「ちょっといい？」をかわしてオフィスを駆け抜ける3Dアクション">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <canvas id="gl" aria-label="ゲーム画面"></canvas>
+  <div id="world-ui" aria-hidden="true"></div>
+  <div id="aura" aria-hidden="true"></div>
+  <div id="flash" aria-hidden="true"></div>
+  <div id="toast" aria-live="polite"></div>
+
+  <!-- プレイ中のHUD -->
+  <div id="hud" hidden>
+    <div class="hud-stage">
+      <span id="hud-label" class="hud-label">STAGE 1</span>
+      <strong id="hud-title">部長に企画書を届けろ</strong>
+    </div>
+    <div class="hud-clock" id="hud-clock">
+      <svg viewBox="0 0 64 64" class="dial" aria-hidden="true">
+        <circle cx="32" cy="32" r="29" class="dial-face"/>
+        <g id="dial-ticks"></g>
+        <circle id="dial-deadline" cx="32" cy="7" r="3.2" class="dial-deadline"/>
+        <line id="dial-hour" x1="32" y1="32" x2="32" y2="18" class="dial-hour"/>
+        <line id="dial-min" x1="32" y1="32" x2="32" y2="10" class="dial-min"/>
+        <circle cx="32" cy="32" r="2.6" class="dial-pin"/>
+      </svg>
+      <div class="hud-time">
+        <span id="hud-now">9:00</span>
+        <small>締切 <b id="hud-deadline">10:30</b></small>
+      </div>
+      <div class="hud-bar"><i id="hud-bar"></i></div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-chip" id="hud-papers" title="頭に積もった書類（多いほど遅くなる）">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="3" width="11" height="14" rx="1.5"/><path d="M7 7h5M7 10h5M7 13h3"/></svg>
+        <b id="hud-papers-n">0</b>
+      </div>
+      <button id="btn-sound" class="icon-btn" aria-label="サウンド切り替え"><span class="snd-on">♪</span><span class="snd-off">×</span></button>
+      <button id="btn-pause" class="icon-btn" aria-label="一時停止">Ⅱ</button>
+    </div>
+    <div id="goal-pointer" aria-hidden="true"><span class="gp-arrow">➤</span><em id="gp-label">部長席</em></div>
+    <div id="dash-hint"><kbd>SPACE</kbd> ダッシュでスルッと回避</div>
+  </div>
+
+  <!-- タッチ操作 -->
+  <div id="touch-ui" hidden>
+    <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div><span class="stick-hint">ここで移動</span></div>
+    <button id="btn-dash" aria-label="ダッシュ"><span>ダッシュ</span></button>
+  </div>
+
+  <!-- 会話 -->
+  <div id="dialogue" hidden>
+    <div class="dlg-card">
+      <div class="dlg-portrait"><img id="dlg-img" alt=""></div>
+      <div class="dlg-body">
+        <div class="dlg-name"><b id="dlg-nick"></b><span id="dlg-name"></span></div>
+        <p id="dlg-text"></p>
+        <div class="dlg-hint">Enter／タップで進む</div>
+      </div>
+      <div id="dlg-stamp" class="stamp"></div>
+    </div>
+  </div>
+
+  <!-- タイトル -->
+  <section id="screen-title" class="screen title-screen" hidden>
+    <div class="title-main">
+      <p class="company">株式会社スルスル広告　営業部</p>
+      <h1 class="logo">
+        <span class="logo-main">スルスル</span>
+        <span class="logo-stamp">営業マン</span>
+      </h1>
+      <p class="tagline">「ちょっといい？」を、スルッとかわせ。</p>
+      <div class="stage-notes" id="stage-notes"></div>
+      <div class="controls">
+        <span class="ctl-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>／<kbd>←↑↓→</kbd> 移動</span>
+        <span class="ctl-keys"><kbd>SPACE</kbd> ダッシュ（回避）</span>
+        <span class="ctl-touch">左手で移動・右下のボタンでダッシュ</span>
+      </div>
+    </div>
+    <aside class="suspects" aria-label="社内の要注意人物">
+      <h2>社内の要注意人物</h2>
+      <ul id="suspect-list"></ul>
+    </aside>
+    <button id="btn-sound-title" class="icon-btn sound-corner" aria-label="サウンド切り替え"><span class="snd-on">♪</span><span class="snd-off">×</span></button>
+  </section>
+
+  <!-- ステージ説明 -->
+  <section id="screen-intro" class="screen" hidden>
+    <article class="memo">
+      <header class="memo-head">
+        <span class="memo-kind">業務連絡</span>
+        <span id="intro-stage" class="memo-stage">STAGE 1 ・ 朝 9:00</span>
+        <span class="memo-urgent">至急</span>
+      </header>
+      <h2 id="intro-title" class="memo-title">部長に企画書を届けろ</h2>
+      <p id="intro-brief" class="memo-brief"></p>
+      <dl class="memo-facts">
+        <div><dt>締切</dt><dd id="intro-deadline">10:30</dd></div>
+        <div><dt>ゴール</dt><dd id="intro-goal">部長席</dd></div>
+        <div><dt>持ち時間</dt><dd id="intro-budget">90分</dd></div>
+      </dl>
+      <h3 class="memo-sub">本日の要注意人物</h3>
+      <ul id="intro-cast" class="cast-list"></ul>
+      <div class="memo-actions">
+        <button id="btn-go" class="btn primary">出発する <kbd>Enter</kbd></button>
+        <button id="btn-intro-back" class="btn ghost">タイトルへ</button>
+      </div>
+    </article>
+  </section>
+
+  <!-- 結果 -->
+  <section id="screen-result" class="screen" hidden>
+    <article class="report" id="report">
+      <header class="report-head">
+        <div>
+          <span class="report-kind">業務報告書</span>
+          <span id="rp-stage" class="report-stage">STAGE 1</span>
+        </div>
+        <div class="hanko-boxes">
+          <div class="hk"><em>担当</em><i id="hk1"></i></div>
+          <div class="hk"><em>課長</em><i id="hk2"></i></div>
+          <div class="hk"><em>部長</em><i id="hk3"></i></div>
+        </div>
+      </header>
+      <h2 id="rp-title" class="report-title"></h2>
+      <dl class="rp-rows">
+        <div><dt id="rp-arrive-label">到着時刻</dt><dd id="rp-arrive"></dd></div>
+        <div><dt id="rp-left-label">残り時間</dt><dd id="rp-left"></dd></div>
+        <div><dt>捕まった回数</dt><dd id="rp-caught"></dd></div>
+        <div><dt>受け取った書類</dt><dd id="rp-papers"></dd></div>
+        <div><dt>スルッと回避</dt><dd id="rp-dodge"></dd></div>
+      </dl>
+      <p id="rp-comment" class="rp-comment"></p>
+      <div id="rp-rank" class="rank-stamp"></div>
+      <div class="rp-actions">
+        <button id="btn-next" class="btn primary">次の業務へ</button>
+        <button id="btn-retry" class="btn">もう一度</button>
+        <button id="btn-title" class="btn ghost">タイトルへ</button>
+      </div>
+    </article>
+  </section>
+
+  <!-- 一時停止 -->
+  <section id="screen-pause" class="screen" hidden>
+    <div class="pause-card">
+      <h2>一時停止</h2>
+      <p>席を外しています。</p>
+      <button id="btn-resume" class="btn primary">再開する</button>
+      <button id="btn-pause-retry" class="btn">最初からやり直す</button>
+      <button id="btn-pause-title" class="btn ghost">タイトルへ</button>
+    </div>
+  </section>
+
+  <div id="loading"><div class="loading-card"><span class="spinner"></span><p>出社中…</p></div></div>
+  <noscript><p class="noscript">このゲームを遊ぶには JavaScript を有効にしてください。</p></noscript>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
