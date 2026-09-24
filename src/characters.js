@@ -245,6 +245,10 @@ function addProp(b, name, side) {
       b.add(unitBox, '#2f6db5', M(hx + side * -0.03, hy + 0.06, 0.03, 0, 0, 0, 0.026, 0.3, 0.24));
       b.add(unitBox, '#ffffff', M(hx + side * -0.045, hy + 0.12, 0.03, 0, 0, 0, 0.004, 0.06, 0.14));
       break;
+    case 'phone':
+      b.add(rbox(0.065, 0.12, 0.016, 0.008), '#1b1d22', M(hx, hy - 0.02, 0.07, -0.6, 0, 0));
+      b.add(unitBox, '#7fc8ff', M(hx, hy - 0.016, 0.081, -0.6, 0, 0, 0.05, 0.095, 0.002));
+      break;
     case 'wallet':
       b.add(rbox(0.1, 0.07, 0.03, 0.01), '#8a5a3a', M(hx, hy - 0.04, 0.05));
       break;
@@ -487,7 +491,7 @@ export class Character {
 
     // 持ち物による腕の基本姿勢
     const carryL = { papers: -0.9, notebook: -0.75, clipboard: -0.7, list: -0.7, folder: 0.05, laptop: 0.05, bag: 0 }[this.propL];
-    const carryR = { mug: -0.55, redpen: -0.45, wallet: -0.3, penlight: -0.5 }[this.propR];
+    const carryR = { mug: -0.55, redpen: -0.45, wallet: -0.3, penlight: -0.5, phone: -0.95 }[this.propR];
     if (carryL !== undefined) {
       armL = carryL + armL * 0.25;
       if (this.propL === 'folder' || this.propL === 'laptop') armLz = 0.02;
@@ -555,6 +559,11 @@ export class Character {
         armL = armR = -2.8;
         legL = 0.2;
         legR = -0.1;
+        break;
+      case 'phone':
+        armR = -2.75;
+        armRz = 0.55;
+        headZ = -0.12;
         break;
       case 'bow':
         rigRotX = 0.5;

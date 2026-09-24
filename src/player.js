@@ -4,6 +4,8 @@ import { Ghosts } from './effects.js';
 import { PLAYER_LOOK } from './cast.js';
 import { damp } from './util.js';
 
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
 const ITEM_PROPS = {
   folder: { left: 'folder' },
   wallet: { right: 'wallet' },
@@ -13,6 +15,9 @@ const ITEM_PROPS = {
 export const DASH_TIME = 0.2;
 export const DASH_SPEED = 13.5;
 export const DASH_COOLDOWN = 0.95;
+export const PHONE_TIME = 3.5;
+export const PHONE_COOLDOWN = 11;
+export const BOOST_TIME = 6;
 
 export class Player {
   constructor(game, item) {
@@ -32,6 +37,10 @@ export class Player {
     this.slowT = 0;
     this.aura = 1;
     this.frozen = false;
+    this.phoneT = 0;
+    this.phoneCD = 0;
+    this.boostT = 0;
+    this.bowing = false;
     this.facing = new THREE.Vector2(0, -1);
 
     this.stack = new THREE.Group();
@@ -39,6 +48,10 @@ export class Player {
     this.char.head.add(this.stack);
     this.stackMat = new THREE.MeshStandardMaterial({ color: '#fbfbf7', roughness: 0.65 });
     this.stackGeo = new THREE.BoxGeometry(0.34, 0.05, 0.42);
+    this.phoneMesh = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.13, 0.018), new THREE.MeshStandardMaterial({ color: '#1b1d22', roughness: 0.3 }));
+    this.phoneMesh.position.set(0, -0.36, 0.05);
+    this.phoneMesh.visible = false;
+    this.char.armR.add(this.phoneMesh);
 
     // 足元のリング（壁の陰でも見える）
     this.ringMat = new THREE.MeshBasicMaterial({ color: '#8fd3ff', transparent: true, opacity: 0.75, depthTest: false, depthWrite: false });
@@ -73,7 +86,7 @@ export class Player {
 
   speedFactor() {
     const paper = Math.max(0.5, 1 - this.papers * 0.085);
-    return paper * this.aura * (this.slowT > 0 ? 0.55 : 1);
+    return paper * this.aura * (this.slowT > 0 ? 0.55 : 1) * (this.boostT > 0 ? 1.3 : 1) * (this.phoneT > 0 ? 0.8 : 1);
   }
 
   addPapers(n) {
@@ -110,11 +123,31 @@ export class Player {
     this.game.audio.dash();
   }
 
+  startPhone() {
+    this.phoneT = PHONE_TIME;
+    this.phoneCD = PHONE_COOLDOWN;
+    this.game.audio.phone?.();
+    this.game.ui.bubble(this, pick(['あ、もしもし！お世話になっております！', 'はい、はい、ただいま向かっております！', 'もしもし〜！はい、その件ですね！']), 'player', 2.2);
+  }
+
   update(dt, input) {
     const c = this.char;
     this.dashCD = Math.max(0, this.dashCD - dt);
     this.invulnT = Math.max(0, this.invulnT - dt);
     this.slowT = Math.max(0, this.slowT - dt);
+    this.phoneCD = Math.max(0, this.phoneCD - dt);
+    if (!this.frozen) {
+      this.phoneT = Math.max(0, this.phoneT - dt);
+      this.boostT = Math.max(0, this.boostT - dt);
+    }
+    if (!this.frozen && input.takePhone?.() && this.phoneCD <= 0) this.startPhone();
+    if (this.boostT > 0 && !this.frozen && Math.hypot(this.vel.x, this.vel.y) > 2) {
+      this.trailT = (this.trailT || 0) - dt;
+      if (this.trailT <= 0) {
+        this.trailT = 0.06;
+        this.game.fx.dust(this.pos.x, this.pos.z, 1, '#ffd98a', 0.4);
+      }
+    }
 
     if (this.frozen) {
       this.vel.set(0, 0);
@@ -160,7 +193,8 @@ export class Player {
     const spd = Math.hypot(this.vel.x, this.vel.y);
     c.speed = this.dashT > 0 ? 0 : spd;
     if (spd > 0.3) c.faceDir(this.vel.x, this.vel.y);
-    if (!this.frozen) c.pose = 'idle';
+    if (!this.frozen) c.pose = this.phoneT > 0 ? 'phone' : this.bowing && Math.hypot(this.vel.x, this.vel.y) < 0.9 ? 'bow' : 'idle';
+    this.phoneMesh.visible = this.phoneT > 0;
     c.sweat.visible = this.papers >= 4 || this.aura < 1;
     c.update(dt);
 

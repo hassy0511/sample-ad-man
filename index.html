@@ -64,12 +64,13 @@
       <button id="btn-pause" class="icon-btn" aria-label="一時停止">Ⅱ</button>
     </div>
     <div id="goal-pointer" aria-hidden="true"><span class="gp-arrow">➤</span><em id="gp-label">部長席</em></div>
-    <div id="dash-hint"><kbd>SPACE</kbd> ダッシュでスルッと回避</div>
+    <div id="dash-hint"><kbd>SPACE</kbd> ダッシュでスルッと回避<span class="hint-phone">　<kbd>E</kbd> 電話中のふり</span></div>
   </div>
 
   <!-- タッチ操作 -->
   <div id="touch-ui" hidden>
     <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div><span class="stick-hint">ここで移動</span></div>
+    <button id="btn-phone" aria-label="電話中のふり"><span>電話</span></button>
     <button id="btn-dash" aria-label="ダッシュ"><span>ダッシュ</span></button>
   </div>
 
@@ -95,11 +96,13 @@
         <span class="logo-stamp">営業マン</span>
       </h1>
       <p class="tagline">「ちょっといい？」を、スルッとかわせ。</p>
+      <div class="chapter-tabs" id="chapter-tabs" role="tablist" aria-label="章"></div>
       <div class="stage-notes" id="stage-notes"></div>
       <div class="controls">
         <span class="ctl-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>／<kbd>←↑↓→</kbd> 移動</span>
         <span class="ctl-keys"><kbd>SPACE</kbd> ダッシュ（回避）</span>
-        <span class="ctl-touch">左手で移動・右下のボタンでダッシュ</span>
+        <span class="ctl-keys"><kbd>E</kbd> 電話中のふり</span>
+        <span class="ctl-touch">左手で移動・右下のボタンでダッシュ／電話中のふり</span>
       </div>
     </div>
     <aside class="suspects" aria-label="社内の要注意人物">
@@ -122,6 +125,7 @@
         <span class="memo-urgent">至急</span>
       </header>
       <h2 id="intro-title" class="memo-title">部長に企画書を届けろ</h2>
+      <p id="intro-story" class="memo-story"></p>
       <p id="intro-brief" class="memo-brief"></p>
       <dl class="memo-facts">
         <div><dt>締切</dt><dd id="intro-deadline">10:30</dd></div>

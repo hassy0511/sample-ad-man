@@ -4,6 +4,7 @@ export class Input {
     this.keys = new Set();
     this.move = { x: 0, y: 0 };
     this.dashQueued = false;
+    this.phoneQueued = false;
     this.stick = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
     this.listeners = { confirm: [], pause: [] };
     this.touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -15,6 +16,7 @@ export class Input {
         this.dashQueued = true;
         e.preventDefault();
       }
+      if (e.code === 'KeyE' || e.code === 'KeyQ' || e.code === 'KeyK') this.phoneQueued = true;
       if (e.code === 'Enter' || e.code === 'Space') this.emit('confirm', e);
       if (e.code === 'Escape' || e.code === 'KeyP') this.emit('pause', e);
       if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -69,6 +71,10 @@ export class Input {
       e.preventDefault();
       this.dashQueued = true;
     });
+    document.getElementById('btn-phone').addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.phoneQueued = true;
+    });
   }
 
   on(name, fn) {
@@ -111,8 +117,15 @@ export class Input {
     return d;
   }
 
+  takePhone() {
+    const p = this.phoneQueued;
+    this.phoneQueued = false;
+    return p;
+  }
+
   reset() {
     this.dashQueued = false;
+    this.phoneQueued = false;
     this.keys.clear();
   }
 }

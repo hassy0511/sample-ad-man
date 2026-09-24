@@ -240,9 +240,9 @@ kbd {
   max-width: 336px;
 }
 .suspects h2 { margin: 0 0 10px; font-size: 0.85rem; letter-spacing: 0.12em; font-weight: 800; }
-.suspects ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 8px; }
+.suspects ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 6px; }
 .suspects li { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; font-size: 0.68rem; font-weight: 800; line-height: 1.25; letter-spacing: -0.02em; }
-.suspects img { width: 64px; height: 64px; border-radius: 50%; background: var(--c, #eee); border: 2.5px solid var(--ink); object-fit: cover; }
+.suspects img { width: 54px; height: 54px; border-radius: 50%; background: var(--c, #eee); border: 2.5px solid var(--ink); object-fit: cover; }
 .sound-corner { position: absolute; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); }
 
 /* ステージ説明（業務連絡メモ） */
@@ -751,7 +751,7 @@ kbd {
 @media (max-width: 900px) {
   .title-screen { grid-template-columns: 1fr; align-content: center; background: linear-gradient(180deg, rgba(248, 249, 252, 0.9) 0%, rgba(248, 249, 252, 0.84) 60%, rgba(248, 249, 252, 0.4) 100%); }
   .suspects { justify-self: start; align-self: start; margin: 0; max-width: 100%; }
-  .suspects ul { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .suspects ul { grid-template-columns: repeat(8, minmax(0, 1fr)); }
   .suspects img { width: 48px; height: 48px; }
 }
 @media (max-width: 640px) {
@@ -844,3 +844,61 @@ kbd {
 .install-card ol { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 6px; font-weight: 700; line-height: 1.5; }
 .install-card p { margin: 0; font-size: 0.85rem; font-weight: 700; color: var(--ink-2); }
 .is-app .install-btn { display: none; }
+
+/* --------------------------------------------------------------- 第2章で追加 */
+.chapter-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.chapter-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 14px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  font-weight: 800;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+.chapter-tab small { font-size: 0.7rem; letter-spacing: 0.1em; color: var(--ink-2); }
+.chapter-tab.on { background: var(--ink); color: #fff; box-shadow: 0 3px 0 var(--shu); }
+.chapter-tab.on small { color: var(--fusen); }
+.memo-story {
+  margin: 0 0 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--fusen);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.6;
+  color: var(--ink-2);
+  max-width: 60ch;
+}
+#btn-phone {
+  position: absolute;
+  right: calc(max(22px, env(safe-area-inset-right)) + 104px);
+  bottom: max(28px, env(safe-area-inset-bottom));
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 0.85rem;
+  box-shadow: 0 4px 0 var(--ink);
+  pointer-events: auto;
+  touch-action: none;
+  display: grid;
+  place-items: center;
+  background-image: conic-gradient(rgba(27, 35, 64, 0.45) calc(var(--cd, 0) * 1turn), transparent 0);
+}
+#btn-phone.on { background-color: var(--fusen); }
+#btn-phone:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+.bubble.shacho { background: #fff8e0; border-color: #8a6a10; box-shadow: 0 3px 0 #8a6a10; }
+.bubble.shacho::after { border-color: #8a6a10; }
+.bubble.doki { background: #f4ecff; }
+@media (max-width: 640px) {
+  .chapter-tab { font-size: 0.82rem; padding: 5px 10px 6px; }
+  .suspects ul { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  .suspects img { width: 38px; height: 38px; }
+}

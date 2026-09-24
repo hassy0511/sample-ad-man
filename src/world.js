@@ -35,6 +35,15 @@ export const LIGHTING = {
     far: '#7a6aa0', mid: '#5b4f84', near: '#3e3764', windows: 0.35, windowColor: '#ffd98a',
     sunDisc: [1500, 470, 60, 'rgba(255,170,110,0.9)'], bloom: 0.42, tint: [1.06, 0.98, 0.95], sat: 1.12, vignette: 0.38, screenBoost: 1.6,
   },
+  night: {
+    exposure: 1.15, hemiSky: '#4a5a9a', hemiGround: '#2a2438', hemi: 0.75,
+    sun: '#a9bcff', sunI: 1.1, sunDir: [0.35, 1.0, -0.25],
+    bgTop: '#05080f', bgBottom: '#18203a', fog: '#121a30', env: 0.14,
+    cityTop: '#03060e', cityMid: '#0d1530', cityBottom: '#1d2748', cloud: 'rgba(90,100,150,0.18)',
+    far: '#141a33', mid: '#0e1328', near: '#090c1c', windows: 0.42, windowColor: '#ffd98a',
+    sunDisc: [520, 150, 34, 'rgba(200,215,255,0.35)'], bloom: 0.62, tint: [0.96, 0.98, 1.08], sat: 1.05, vignette: 0.5, screenBoost: 2.3,
+    playerLight: true,
+  },
 };
 
 const PAL = {
@@ -114,7 +123,7 @@ export class World {
     this.elevators = [];
     this.exitDoors = [];
     this.shredders = [];
-    this.spawns = { player: null, goal: null, enemies: [], boss: null };
+    this.spawns = { player: null, goal: null, enemies: [], boss: null, pickups: [] };
     this.W = this.grid.w;
     this.H = this.grid.h;
     this.maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -141,6 +150,7 @@ export class World {
         const c = grid.at(x, y);
         if (c === 'P') this.spawns.player = { x: x + 0.5, z: y + 0.5 };
         else if (c === 'G') this.spawns.goal = { x: x + 0.5, z: y + 0.5 };
+        else if (c === 'C') this.spawns.pickups.push({ x: x + 0.5, z: y + 0.5 });
         else if (ENEMY_CODES[c]) {
           order[c] = order[c] || 0;
           this.spawns.enemies.push({ code: Number(c), type: ENEMY_CODES[c], x: x + 0.5, z: y + 0.5, index: order[c]++ });
@@ -422,7 +432,7 @@ export class World {
     B.box('matte', PAL.pedestal, side * 0.27, 0.27, 0.22, 0.32, 0.5, 0.44);
     for (const hy of [0.4, 0.24]) B.box('matte', '#b7bcc4', side * 0.27, hy, -0.005, 0.3, 0.012, 0.012);
 
-    const occupied = rng() < 0.4;
+    const occupied = rng() < (this.stage.occupancy ?? 0.4);
     // モニター
     const kind = rng();
     const cell = occupied ? Math.floor(rng() * SCREEN_CELLS) : rng() < 0.6 ? 10 : Math.floor(rng() * SCREEN_CELLS);
@@ -782,7 +792,7 @@ export class World {
     B.cyl('metal', '#6d737d', 0, 0.27, -0.95, 0.03, 0.03, 0.34, 6);
     // 名札
     const plate = new THREE.Mesh(this.track(new THREE.PlaneGeometry(0.6, 0.15)),
-      this.track(new THREE.MeshStandardMaterial({ map: this.track(textTexture('部長  大河原', { w: 384, h: 96, bg: '#2a1c14', color: '#e8c872', font: '800 44px "M PLUS Rounded 1c", sans-serif', radius: 6 })), roughness: 0.4 })));
+      this.track(new THREE.MeshStandardMaterial({ map: this.track(textTexture(this.stage.deskName || '部長  大河原', { w: 384, h: 96, bg: '#2a1c14', color: '#e8c872', font: '800 44px "M PLUS Rounded 1c", sans-serif', radius: 6 })), roughness: 0.4 })));
     plate.position.set(cx, 0.86, cz + 0.33);
     plate.rotation.x = -0.35;
     this.group.add(plate);
@@ -887,6 +897,12 @@ export class World {
     this.sunDir = new THREE.Vector3(...p.sunDir).normalize();
     this.group.add(sun, sun.target);
     this.sun = sun;
+    if (p.playerLight) {
+      // 夜は主人公のまわりだけ、デスクライトのように明るくする
+      this.playerLight = new THREE.PointLight('#ffd9a0', 9, 9, 1.6);
+      this.playerLight.position.set(0, 3, 0);
+      this.group.add(this.playerLight);
+    }
     this.shadowSpan = S;
     // 影カメラの基底（テクセルスナップ用）
     const fwd = this.sunDir.clone().negate();

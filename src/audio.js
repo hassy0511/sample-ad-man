@@ -207,6 +207,12 @@ export class Audio {
   fail() {
     [70, 69, 68, 67].forEach((n, i) => this.tone(NOTE(n - 12), i === 3 ? 1.0 : 0.32, { type: 'sawtooth', vol: 0.1, filter: 900, delay: i * 0.34, vibrato: i === 3 ? 6 : 0 }));
   }
+  phone() {
+    [0, 0.14].forEach((d) => {
+      this.tone(1320, 0.08, { type: 'square', vol: 0.05, filter: 3000, delay: d });
+      this.tone(1760, 0.08, { type: 'square', vol: 0.05, filter: 3000, delay: d + 0.04 });
+    });
+  }
   countdown(last) { this.tone(last ? 1320 : 880, last ? 0.4 : 0.12, { type: 'square', vol: 0.08, filter: 3000 }); }
 
   // --- BGM -----------------------------------------------------------------

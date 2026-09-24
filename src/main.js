@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { STAGES } from './levels.js';
-import { CAST, BOSS, PLAYER_LOOK } from './cast.js';
+import { STAGES, CHAPTERS } from './levels.js';
+import { CAST, BOSS, PLAYER_LOOK, GOAL_NPC } from './cast.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { Enemy } from './enemies.js';
@@ -171,8 +171,9 @@ class Game {
     });
 
     this.boss = null;
-    if (stage.goalType === 'boss' && this.world.spawns.boss) {
-      const b = new Character(BOSS.look, { outline: true });
+    if ((stage.goalType === 'boss' || stage.goalType === 'desk') && this.world.spawns.boss) {
+      this.goalNpc = GOAL_NPC[stage.goalNpc || 'boss'];
+      const b = new Character(this.goalNpc.look, { outline: true });
       const bp = this.world.spawns.boss;
       b.root.position.set(bp.x, 0.06, bp.z);
       b.setYaw(0);
@@ -188,6 +189,21 @@ class Game {
       m.position.set(s.x + Math.sin(s.yaw) * 0.9, 0.04, s.z + Math.cos(s.yaw) * 0.9);
       this.scene.add(m);
       return m;
+    });
+
+    // 缶コーヒー
+    this.pickups = this.world.spawns.pickups.map((p) => {
+      const g = new THREE.Group();
+      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.3, 16), new THREE.MeshStandardMaterial({ color: '#7a3b1f', roughness: 0.35, metalness: 0.4 }));
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.112, 0.112, 0.1, 16), new THREE.MeshStandardMaterial({ color: '#f2d27a', roughness: 0.4, metalness: 0.3 }));
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.42, 32), new THREE.MeshBasicMaterial({ color: '#ffd98a', transparent: true, opacity: 0.8, depthWrite: false }));
+      can.castShadow = true;
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = -0.62;
+      g.add(can, band, ring);
+      g.position.set(p.x, 0.65, p.z);
+      this.scene.add(g);
+      return { g, x: p.x, z: p.z, taken: false };
     });
 
     this.demo = demo;
@@ -230,6 +246,16 @@ class Game {
       for (const m of this.boss.meshes) m.geometry.dispose();
       this.boss = null;
     }
+    for (const p of this.pickups || []) {
+      p.g.removeFromParent();
+      p.g.traverse((o) => {
+        if (o.isMesh) {
+          o.geometry.dispose();
+          o.material.dispose();
+        }
+      });
+    }
+    this.pickups = [];
     for (const m of this.shredMarks || []) {
       m.removeFromParent();
       m.geometry.dispose();
@@ -253,15 +279,19 @@ class Game {
     this.ui.closeDialogue();
     this.ui.loading(true);
     requestAnimationFrame(() => {
-      this.loadStage(ending ? 2 : 0, { demo: true });
+      const ch = this.chapter || 1;
+      const bg = ending ? STAGES.findLastIndex((st) => st.chapter === ch) : STAGES.findIndex((st) => st.chapter === ch);
+      this.loadStage(Math.max(0, bg), { demo: true });
       this.ui.loading(false);
-      this.ui.title(STAGES, this.best, (i) => {
+      this.ui.title(STAGES, CHAPTERS, ch, this.best, (c) => {
+        this.chapter = c;
+      }, (i) => {
         this.audio.unlock();
         this.audio.click();
         this.toIntro(i);
       });
       if (ending) {
-        this.ui.toast('本日の業務、完了！');
+        this.ui.toast(ch === 1 ? '本日の業務、完了！' : '月末、乗り切った！');
         this.fx.confettiBurst(this.player.pos.x, this.player.pos.z, 140);
         this.audio.clear();
       }
@@ -270,6 +300,7 @@ class Game {
   }
 
   toIntro(i) {
+    this.chapter = STAGES[i].chapter;
     this.ui.hud(false);
     this.ui.closeDialogue();
     const go = () => {
@@ -379,6 +410,7 @@ class Game {
     }
 
     this.world.update(dt, this.time, this.clock, P ? P.pos : null);
+    if (this.world.playerLight && P) this.world.playerLight.position.set(P.pos.x, 2.6, P.pos.z + 0.4);
     this.fx.update(dt);
     this.updateCamera(dt);
   }
@@ -397,6 +429,31 @@ class Game {
     P.update(dt, this.input);
     this.boss?.update(dt);
     this.separate();
+
+    // 社長に呼び止められる
+    for (const e of this.enemies) {
+      if (e.wantsCatch) {
+        e.wantsCatch = false;
+        this.startTalk(e, true);
+        return;
+      }
+    }
+    P.bowing = this.enemies.some((e) => e.type === 'shacho' && e.seesPlayer);
+
+    // 缶コーヒー
+    for (const p of this.pickups) {
+      if (p.taken) continue;
+      p.g.rotation.y += dt * 2.5;
+      p.g.position.y = 0.65 + Math.sin(this.time * 3 + p.x) * 0.08;
+      if (Math.hypot(p.x - P.pos.x, p.z - P.pos.z) < 0.7) {
+        p.taken = true;
+        p.g.visible = false;
+        P.boostT = 6;
+        this.fx.sparkle(p.x, 0.8, p.z, 14);
+        this.audio.sparkle();
+        this.ui.float(P.pos.x, 2.3, P.pos.z, '缶コーヒー！ スピードUP', 'good');
+      }
+    }
 
     // つかまる・すれ違う
     for (const e of this.enemies) {
@@ -434,6 +491,9 @@ class Game {
     const left = stage.deadline - this.clock;
     this.audio.setTension(left <= 10);
     this.ui.updateHud(this.clock, stage, P.papers, P.dashCD / 0.95, false);
+    this.phoneBtn ??= document.getElementById('btn-phone');
+    this.phoneBtn.style.setProperty('--cd', (P.phoneCD / 11).toFixed(3));
+    this.phoneBtn.classList.toggle('on', P.phoneT > 0);
     this.ui.goalPointer(this.camera, this.world.spawns.goal, true);
 
     if (this.clock >= stage.deadline) {
@@ -479,6 +539,18 @@ class Game {
         }
       }
     }
+  }
+
+  /** 社長の視界に入っているか（ほかの社員が大人しくなる判定） */
+  shachoSees(x, z) {
+    for (const e of this.enemies) if (e.type === 'shacho' && e.viewContains(x, z)) return true;
+    return false;
+  }
+
+  onShachoPass() {
+    const P = this.player;
+    this.dodges++;
+    this.ui.float(P.pos.x, 2.3, P.pos.z, 'お辞儀でセーフ', 'good');
   }
 
   nearMiss(e) {
@@ -551,7 +623,7 @@ class Game {
   }
 
   // --- 会話 -----------------------------------------------------------------
-  startTalk(e) {
+  startTalk(e, called = false) {
     const P = this.player;
     this.state = 'talk';
     this.caught++;
@@ -566,7 +638,16 @@ class Game {
       const grid = this.world.grid;
       const ex = P.pos.x + (dx / d) * 0.95;
       const ez = P.pos.z + (dz / d) * 0.95;
-      if (grid.isWalkWorld(ex, ez)) {
+      if (called) {
+        // 社長に呼ばれたら、こちらから駆け寄る
+        const px = e.pos.x - (dx / d) * 0.95;
+        const pz = e.pos.z - (dz / d) * 0.95;
+        if (grid.isWalkWorld(px, pz)) P.pos.set(px, 0, pz);
+        else if (grid.isWalkWorld(ex, ez)) {
+          e.pos.x = ex;
+          e.pos.z = ez;
+        }
+      } else if (grid.isWalkWorld(ex, ez)) {
         e.pos.x = ex;
         e.pos.z = ez;
       } else {
@@ -750,25 +831,31 @@ class Game {
     this.ui.aura(0);
     this.audio.setTension(false);
     const type = this.stage.goalType;
-    if (type === 'boss') {
+    if (type === 'boss' || type === 'desk') {
       const b = this.boss;
+      const npc = this.goalNpc;
       P.char.faceDir(b.root.position.x - P.pos.x, b.root.position.z - P.pos.z);
       P.char.pose = 'bow';
       b.pose = 'talk';
       this.openTalk({
-        who: { nick: '営業部長', role: BOSS.role, name: BOSS.name },
-        portrait: this.ui.portraits.boss,
-        tint: '#ffd84d',
-        lines: BOSS.lines,
-        voice: BOSS.voice,
+        who: { nick: npc.nick, role: npc.role, name: npc.name },
+        portrait: this.ui.portraits[this.stage.goalNpc || 'boss'],
+        tint: npc.tint === '#1b2340' ? '#ffd84d' : npc.tint,
+        lines: npc.lines,
+        voice: npc.voice,
         penalty: 0,
-        stamp: ['承認', ''],
+        stamp: [npc.stamp, ''],
         onDone: () => {
           b.pose = 'sit';
           b.setMood('happy');
           this.celebrate();
         },
       });
+    } else if (type === 'spot') {
+      P.char.faceDir(0, -1);
+      P.char.pose = 'bow';
+      this.audio.ding();
+      setTimeout(() => this.celebrate(1.2), 500);
     } else if (type === 'elevator') {
       const e = this.world.nearestElevator(P.pos.x, P.pos.z);
       e.target = 1;
@@ -885,7 +972,7 @@ class Game {
         } catch (e) { /* 保存できない環境 */ }
       }
     }
-    const last = this.stageIndex === STAGES.length - 1;
+    const last = !STAGES[this.stageIndex + 1] || STAGES[this.stageIndex + 1].chapter !== stage.chapter;
     this.ui.result({
       stage, success, arrive: this.arrive, left, caught: this.caught,
       papers: this.player.totalPapers, dodges: this.dodges, rank, comment, last,
@@ -953,7 +1040,7 @@ class Game {
     // マップ外が映りすぎないよう制限
     if (st === 'play' || st === 'flyover') {
       const halfW = this.viewDist() * Math.tan(this.hHalf()) * 0.95;
-      const mx = Math.min(W / 2, Math.max(6, halfW - 1.5));
+      const mx = Math.min(W / 2, Math.max(1.5, halfW - 1.5));
       c.goalTarget.x = clamp(c.goalTarget.x, mx, W - mx);
       c.goalTarget.z = clamp(c.goalTarget.z, 3.5, H - 6);
     }

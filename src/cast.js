@@ -221,6 +221,76 @@ export const CAST = {
       ['あ、帰るとこ？ちょうどよかった！', '今日、課の歓迎会でさ！', '出席に丸しとくね〜！'],
     ],
   },
+
+  shacho: {
+    code: 7,
+    name: '鶴田社長',
+    role: '代表取締役',
+    nick: '抜き打ち巡回の社長',
+    trait: '金色の視界の中で動くとアウト（ダッシュも見られる）。立ち止まればお辞儀でセーフ。社長の視界では、ほかの人も大人しくなる。',
+    power: 5,
+    penalty: 25,
+    papers: 0,
+    stamp: '査定',
+    tint: '#d4a82a',
+    voice: { freq: 100, type: 'sawtooth' },
+    look: {
+      skin: '#e8b995',
+      hair: { style: 'side', color: '#dcd8d2' },
+      top: { type: 'suit', color: '#1c2233' },
+      shirt: '#ffffff',
+      tie: '#c9a227',
+      bottom: { type: 'pants', color: '#1c2233' },
+      shoes: '#0d0d0d',
+      mustache: '#e4e0da',
+      brows: 'normal',
+      cheeks: false,
+      width: 1.18,
+      scale: 1.08,
+    },
+    notice: ['おや？', 'そこの君！'],
+    pass: ['うむ、ご苦労。', '精が出るね。', '顔色いいね。', 'うむ。'],
+    talks: [
+      ['そこの君、廊下は走らない！', '……で、どこの部署だったかな？', '（25分経過）…わしが若い頃はな、ポケベルで…'],
+      ['おや、ちょうどいい。', '今期の数字、ざっくり説明してくれる？', '（25分経過）…続きは来週の面談で聞こう。'],
+      ['君、ネクタイが曲がっとるよ。', '身だしなみは営業の基本だ。わしの新人時代は…', '（25分経過）…というわけだ。がんばりたまえ。'],
+    ],
+  },
+
+  doki: {
+    code: 8,
+    name: '三上さん',
+    role: '営業2課 同期',
+    nick: '充電器の同期',
+    trait: 'スマホを見ながらうろうろ。目が合うと一直線に走ってくる。「充電器貸して！」',
+    power: 2,
+    penalty: 10,
+    papers: 0,
+    stamp: '充電中',
+    tint: '#b07ee8',
+    voice: { freq: 360, type: 'triangle' },
+    look: {
+      skin: '#f5d3bd',
+      hair: { style: 'pony', color: '#5a3b28' },
+      top: { type: 'cardigan', color: '#c9b4ec' },
+      shirt: '#ffffff',
+      tie: null,
+      bottom: { type: 'skirt', color: '#3e4661' },
+      legs: '#d8b49a',
+      shoes: '#2a2a2a',
+      brows: 'worried',
+      cheeks: true,
+      scale: 0.96,
+      prop: { right: 'phone' },
+    },
+    notice: ['あっ！充電器持ってる！？', 'ねえ、充電器貸して！', 'タイプC！タイプCある！？'],
+    giveup: ['…ほかの人に借りよ', 'はぁ、はぁ…速い…'],
+    after: ['助かった〜！', '今度おごる！（おごらない）'],
+    talks: [
+      ['充電器貸して！残り2％なの！', 'え、ライトニング？…じゃあいいや', '（10分経過）でさ、昨日のドラマ見た？'],
+      ['ねえ聞いて！充電器忘れた！', 'あとモバイルバッテリーも忘れた！', '（10分経過）…あ、このコンセント使えないやつだ'],
+    ],
+  },
 };
 
 export const BOSS = {
@@ -243,6 +313,22 @@ export const BOSS = {
     scale: 1.05,
   },
   lines: ['おう、企画書か。', '……うん。いいじゃない。', 'これで行こう。承認！'],
+  stamp: '承認',
+};
+
+// ゴールにいる人（部長席・経理の鬼の席）
+export const GOAL_NPC = {
+  boss: { ...BOSS, nick: '営業部長' },
+  keiri: {
+    name: '細田さん',
+    role: '経理部',
+    nick: '経理の鬼',
+    tint: '#e0402f',
+    voice: { freq: 540, type: 'square' },
+    look: null,
+    lines: ['……経費精算ですね。', '（領収書を1枚ずつ、電卓を叩きながら確認している）', '……不備なし。受理します。'],
+    stamp: '受理',
+  },
 };
 
 export const WORKER_HAIR = ['short', 'side', 'bob', 'long', 'short', 'bald', 'pony', 'neat'];
@@ -258,3 +344,5 @@ export const WORKER_TOPS = [
   { type: 'shirt', color: '#f5d8d8' },
   { type: 'suit', color: '#1f2226' },
 ];
+
+GOAL_NPC.keiri.look = CAST.keiri.look;

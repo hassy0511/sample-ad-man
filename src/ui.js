@@ -47,23 +47,44 @@ export class UI {
   }
 
   // --- タイトル -------------------------------------------------------------
-  title(stages, best, onPick) {
+  title(stages, chapters, current, best, onChapter, onPick) {
+    const tabs = $('chapter-tabs');
     const wrap = $('stage-notes');
-    wrap.innerHTML = '';
-    stages.forEach((st, i) => {
-      const b = document.createElement('button');
-      b.className = 'note';
-      b.type = 'button';
-      b.id = `stage-note-${st.id}`;
-      b.innerHTML = `
-        <span class="note-time">${fmtClock(st.start)}</span>
-        <span class="note-period">${st.label}・${st.period}</span>
-        <span class="note-title">${st.title}</span>
-        <span class="note-meta">締切 ${fmtClock(st.deadline)}</span>
-        ${best[st.id] ? `<span class="note-rank stamp">${best[st.id]}</span>` : ''}`;
-      b.addEventListener('click', () => onPick(i));
-      wrap.appendChild(b);
-    });
+    const render = (ch) => {
+      tabs.innerHTML = '';
+      for (const c of chapters) {
+        const t = document.createElement('button');
+        t.type = 'button';
+        t.className = `chapter-tab${c.id === ch ? ' on' : ''}`;
+        t.setAttribute('role', 'tab');
+        t.setAttribute('aria-selected', String(c.id === ch));
+        t.innerHTML = `<small>第${c.id}章</small>${c.title}`;
+        t.addEventListener('click', () => {
+          if (c.id === ch) return;
+          this.game.audio.click();
+          onChapter(c.id);
+          render(c.id);
+        });
+        tabs.appendChild(t);
+      }
+      wrap.innerHTML = '';
+      stages.forEach((st, i) => {
+        if (st.chapter !== ch) return;
+        const b = document.createElement('button');
+        b.className = 'note';
+        b.type = 'button';
+        b.id = `stage-note-${st.id}`;
+        b.innerHTML = `
+          <span class="note-time">${fmtClock(st.start)}</span>
+          <span class="note-period">${st.label}・${st.period}</span>
+          <span class="note-title">${st.title}</span>
+          <span class="note-meta">締切 ${fmtClock(st.deadline)}</span>
+          ${best[st.id] ? `<span class="note-rank stamp">${best[st.id]}</span>` : ''}`;
+        b.addEventListener('click', () => onPick(i));
+        wrap.appendChild(b);
+      });
+    };
+    render(current);
     const list = $('suspect-list');
     list.innerHTML = '';
     for (const [key, c] of Object.entries(CAST)) {
@@ -80,6 +101,8 @@ export class UI {
     $('intro-stage').textContent = `${stage.label} ・ ${stage.period} ${fmtClock(stage.start)}`;
     $('intro-title').textContent = stage.title;
     $('intro-brief').textContent = stage.brief;
+    $('intro-story').textContent = stage.story || '';
+    $('intro-story').hidden = !stage.story;
     $('intro-deadline').textContent = fmtClock(stage.deadline);
     $('intro-goal').textContent = stage.goalLabel;
     $('intro-budget').textContent = `${stage.deadline - stage.start}分`;
