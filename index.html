@@ -63,6 +63,7 @@
       <button id="btn-sound" class="icon-btn" aria-label="サウンド切り替え"><span class="snd-on">♪</span><span class="snd-off">×</span></button>
       <button id="btn-pause" class="icon-btn" aria-label="一時停止">Ⅱ</button>
     </div>
+    <div id="hud-rally" class="hud-rally" hidden aria-label="集めたハンコ"></div>
     <div id="goal-pointer" aria-hidden="true"><span class="gp-arrow">➤</span><em id="gp-label">部長席</em></div>
     <div id="dash-hint"><kbd>SPACE</kbd> ダッシュでスルッと回避<span class="hint-phone">　<kbd>E</kbd> 電話中のふり</span></div>
   </div>
@@ -108,6 +109,7 @@
     <aside class="suspects" aria-label="社内の要注意人物">
       <h2>社内の要注意人物</h2>
       <ul id="suspect-list"></ul>
+      <button id="btn-book" class="btn book-btn" type="button">社員名簿を開く</button>
     </aside>
     <button id="btn-install" class="install-btn" type="button" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M5 17v3h14v-3"/></svg>
@@ -170,6 +172,21 @@
         <button id="btn-retry" class="btn">もう一度</button>
         <button id="btn-title" class="btn ghost">タイトルへ</button>
       </div>
+    </article>
+  </section>
+
+  <!-- 社員名簿 -->
+  <section id="screen-book" class="screen" hidden>
+    <article class="book">
+      <header class="book-head">
+        <div>
+          <span class="memo-kind">社員名簿</span>
+          <h2>社内の要注意人物</h2>
+        </div>
+        <p id="book-progress" class="book-progress"></p>
+      </header>
+      <ul id="book-list" class="book-list"></ul>
+      <button id="btn-book-close" class="btn primary" type="button">閉じる</button>
     </article>
   </section>
 

@@ -28,7 +28,7 @@ export class UI {
   }
 
   show(id) {
-    for (const s of ['screen-title', 'screen-intro', 'screen-result', 'screen-pause']) $(s).hidden = s !== id;
+    for (const s of ['screen-title', 'screen-intro', 'screen-result', 'screen-pause', 'screen-book']) $(s).hidden = s !== id;
   }
 
   setTouch(on) {
@@ -89,11 +89,49 @@ export class UI {
     list.innerHTML = '';
     for (const [key, c] of Object.entries(CAST)) {
       const li = document.createElement('li');
-      li.innerHTML = `<img src="${this.portraits[key] || ''}" alt="" style="--c:${c.tint}33"><span>${c.nick}</span>`;
+      const known = !!this.game.stats?.met[key];
+      li.innerHTML = known
+        ? `<img src="${this.portraits[key] || ''}" alt="" style="--c:${c.tint}33"><span>${c.nick}</span>`
+        : `<img src="${this.portraits[key] || ''}" alt="" class="silhouette"><span>？？？</span>`;
       list.appendChild(li);
     }
     this.show('screen-title');
     setTimeout(() => wrap.querySelector('.note')?.focus({ preventScroll: true }), 50);
+  }
+
+  // --- 社員名簿 -------------------------------------------------------------
+  book(stats, onClose) {
+    const ul = $('book-list');
+    ul.innerHTML = '';
+    const entries = Object.entries(CAST);
+    let met = 0;
+    for (const [key, c] of entries) {
+      const known = !!stats.met[key];
+      if (known) met++;
+      const li = document.createElement('li');
+      li.className = `book-card${known ? '' : ' unknown'}`;
+      const dots = Array.from({ length: 5 }, (_, i) => `<i class="${i < c.power ? 'on' : ''}"></i>`).join('');
+      li.innerHTML = known ? `
+        <img src="${this.portraits[key] || ''}" alt="" style="--c:${c.tint}33">
+        <div class="bk-main">
+          <b>${c.nick}</b>
+          <small>${c.role}　${c.name}</small>
+          <span class="danger" aria-label="危険度${c.power}">${dots}</span>
+        </div>
+        <p>${c.trait}</p>
+        <dl class="bk-stats">
+          <div><dt>捕まった</dt><dd>${stats.caught[key] || 0}回</dd></div>
+          <div><dt>かわした</dt><dd>${stats.dodged[key] || 0}回</dd></div>
+        </dl>` : `
+        <img src="${this.portraits[key] || ''}" alt="" class="silhouette">
+        <div class="bk-main"><b>？？？</b><small>まだ会っていない</small></div>
+        <p>どこかのフロアにいるらしい。</p>`;
+      ul.appendChild(li);
+    }
+    $('book-progress').textContent = `${entries.length}人中 ${met}人と遭遇`;
+    $('btn-book-close').onclick = onClose;
+    this.show('screen-book');
+    setTimeout(() => $('btn-book-close').focus({ preventScroll: true }), 50);
   }
 
   // --- ステージ説明 ---------------------------------------------------------
@@ -136,6 +174,7 @@ export class UI {
       $('hud-title').textContent = stage.title;
       $('hud-deadline').textContent = fmtClock(stage.deadline);
       $('gp-label').textContent = stage.goalLabel;
+      $('hud-rally').hidden = !stage.rally;
       const a = ((stage.deadline % 60) / 60) * Math.PI * 2;
       $('dial-deadline').setAttribute('cx', 32 + Math.sin(a) * 25);
       $('dial-deadline').setAttribute('cy', 32 - Math.cos(a) * 25);
@@ -173,6 +212,12 @@ export class UI {
       this.lastPapers = papers;
     }
     $('btn-dash').style.setProperty('--cd', dashCd.toFixed(3));
+  }
+
+  setRally(rally, idx, label) {
+    const el = $('hud-rally');
+    el.innerHTML = rally.map((r, i) => `<span class="rs${i < idx ? ' on' : ''}${i === idx ? ' next' : ''}"><i>${i < idx ? '印' : ''}</i>${r.label}</span>`).join('');
+    $('gp-label').textContent = label;
   }
 
   goalPointer(camera, goal, show) {

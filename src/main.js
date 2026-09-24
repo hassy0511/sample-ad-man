@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { STAGES, CHAPTERS } from './levels.js';
-import { CAST, BOSS, PLAYER_LOOK, GOAL_NPC } from './cast.js';
+import { CAST, BOSS, PLAYER_LOOK, GOAL_NPC, RALLY_REJECT } from './cast.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { Enemy } from './enemies.js';
@@ -57,6 +57,11 @@ class Game {
     } catch (e) {
       this.best = {};
     }
+    this.stats = { met: {}, caught: {}, dodged: {} };
+    try {
+      const st = JSON.parse(localStorage.getItem('surusuru-stats') || 'null');
+      if (st) this.stats = { met: st.met || {}, caught: st.caught || {}, dodged: st.dodged || {} };
+    } catch (e) { /* 保存できない環境 */ }
     this.perf = { t: 0, frames: 0, level: this.input.touch ? 1 : 0 };
 
     this.bindUi();
@@ -83,6 +88,11 @@ class Game {
     document.getElementById('btn-sound').addEventListener('click', soundToggle);
     document.getElementById('btn-sound-title').addEventListener('click', soundToggle);
     document.getElementById('btn-pause').addEventListener('click', () => this.pause(true));
+    document.getElementById('btn-book').addEventListener('click', () => {
+      this.audio.unlock();
+      this.audio.click();
+      this.ui.book(this.stats, () => this.ui.show('screen-title'));
+    });
     document.getElementById('btn-resume').addEventListener('click', () => this.pause(false));
     document.getElementById('btn-pause-retry').addEventListener('click', () => {
       this.ui.show(null);
@@ -130,6 +140,8 @@ class Game {
 
     const looks = Object.fromEntries(Object.entries(CAST).map(([k, v]) => [k, v.look]));
     looks.boss = BOSS.look;
+    looks.kacho = GOAL_NPC.kacho.look;
+    looks.jomu = GOAL_NPC.jomu.look;
     looks.player = PLAYER_LOOK;
     try {
       this.ui.portraits = renderPortraits(looks);
@@ -180,6 +192,25 @@ class Game {
       b.pose = 'sit';
       this.scene.add(b.root);
       this.boss = b;
+    }
+
+    // ハンコラリーの決裁者
+    this.rally = null;
+    if (stage.goalType === 'rally') {
+      this.rally = stage.rally.map((r) => {
+        const d = this.world.spawns.desks[r.desk];
+        const npc = GOAL_NPC[r.npc];
+        const c = new Character(npc.look, { outline: true });
+        c.root.position.set(d.x, 0.06, d.z);
+        c.setYaw(0);
+        c.pose = 'sit';
+        this.scene.add(c.root);
+        return { ...r, d, npc, char: c, pos: { x: d.x, z: d.z }, done: false };
+      });
+      this.rallyIdx = 0;
+      this.rallyNoteT = 0;
+      const f = this.rally[0].d.front;
+      this.world.goalFx.group.position.set(f.x, 0, f.z);
     }
 
     // シュレッダーの目印
@@ -241,6 +272,11 @@ class Game {
     this.enemies = [];
     this.player?.dispose();
     this.player = null;
+    for (const r of this.rally || []) {
+      r.char.root.removeFromParent();
+      for (const m of r.char.meshes) m.geometry.dispose();
+    }
+    this.rally = null;
     if (this.boss) {
       this.boss.root.removeFromParent();
       for (const m of this.boss.meshes) m.geometry.dispose();
@@ -325,6 +361,8 @@ class Game {
     this.audio.click();
     this.ui.show(null);
     this.ui.hud(true, this.stage);
+    for (const e of this.enemies) this.record('met', e.type);
+    if (this.rally) this.ui.setRally(this.rally, 0, `${this.rally[0].label}席`);
     this.state = 'flyover';
     this.flyT = 0;
     this.input.reset();
@@ -411,6 +449,7 @@ class Game {
 
     this.world.update(dt, this.time, this.clock, P ? P.pos : null);
     if (this.world.playerLight && P) this.world.playerLight.position.set(P.pos.x, 2.6, P.pos.z + 0.4);
+    for (const r of this.rally || []) r.char.update(dt);
     this.fx.update(dt);
     this.updateCamera(dt);
   }
@@ -494,14 +533,18 @@ class Game {
     this.phoneBtn ??= document.getElementById('btn-phone');
     this.phoneBtn.style.setProperty('--cd', (P.phoneCD / 11).toFixed(3));
     this.phoneBtn.classList.toggle('on', P.phoneT > 0);
-    this.ui.goalPointer(this.camera, this.world.spawns.goal, true);
+    this.ui.goalPointer(this.camera, this.currentGoal(), true);
 
     if (this.clock >= stage.deadline) {
       this.fail();
       return;
     }
-    const g = this.world.spawns.goal;
-    if (Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < 0.85) this.reachGoal();
+    if (this.rally) {
+      if (this.updateRally(dt)) return;
+    } else {
+      const g = this.world.spawns.goal;
+      if (Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < 0.85) this.reachGoal();
+    }
 
     this.cam.goalTarget.set(P.pos.x + P.vel.x * 0.28, 0, P.pos.z + P.vel.y * 0.28);
     this.cam.goalScale = 1;
@@ -548,12 +591,22 @@ class Game {
   }
 
   onShachoPass() {
+    this.record('dodged', 'shacho');
     const P = this.player;
     this.dodges++;
     this.ui.float(P.pos.x, 2.3, P.pos.z, 'お辞儀でセーフ', 'good');
   }
 
+  record(kind, type) {
+    if (!type) return;
+    this.stats[kind][type] = kind === 'met' ? true : (this.stats[kind][type] || 0) + 1;
+    try {
+      localStorage.setItem('surusuru-stats', JSON.stringify(this.stats));
+    } catch (err) { /* 保存できない環境 */ }
+  }
+
   nearMiss(e) {
+    this.record('dodged', e.type);
     e.nearMissed = true;
     this.dodges++;
     const P = this.player;
@@ -564,6 +617,7 @@ class Game {
   }
 
   onShinjinTrip(e) {
+    this.record('dodged', 'shinjin');
     this.dodges++;
     this.ui.float(e.pos.x, 2.2, e.pos.z, '振り切った！', 'good');
   }
@@ -586,6 +640,7 @@ class Game {
     e.char.play('throw');
     e.say(pick(Math.random, e.cfg.talks[0]), 'shorui', 1.8);
     P.addPapers(1);
+    this.record('caught', 'shorui');
     this.clock += e.cfg.penalty;
     this.fx.papers(P.pos.x, 1.6, P.pos.z, 5, 0.6);
     this.audio.paperHit();
@@ -601,6 +656,7 @@ class Game {
     const d = Math.hypot(to.x - P.pos.x, to.z - P.pos.z);
     if (d < 0.72 && !P.invulnerable) {
       P.addPapers(1);
+      this.record('caught', 'shorui');
       this.clock += enemy.cfg.penalty;
       this.fx.papers(P.pos.x, 1.5, P.pos.z, 10, 1);
       this.audio.paperHit();
@@ -611,6 +667,7 @@ class Game {
       this.audio.paperMiss();
       if (P.dashing && d < 1.6) {
         this.dodges++;
+        this.record('dodged', 'shorui');
         this.ui.float(P.pos.x, 2.3, P.pos.z, 'スルッ！', 'good');
         this.fx.sparkle(P.pos.x, 1, P.pos.z, 10);
         this.audio.sparkle();
@@ -624,6 +681,7 @@ class Game {
 
   // --- 会話 -----------------------------------------------------------------
   startTalk(e, called = false) {
+    this.record('caught', e.type);
     const P = this.player;
     this.state = 'talk';
     this.caught++;
@@ -816,6 +874,95 @@ class Game {
   }
 
   // --- ゴール -----------------------------------------------------------------
+  // --- ハンコラリー -----------------------------------------------------------
+  currentGoal() {
+    if (!this.rally || this.rallyIdx >= this.rally.length) return this.world.spawns.goal;
+    return this.rally[this.rallyIdx].d.front;
+  }
+
+  updateRally(dt) {
+    const P = this.player;
+    this.rallyNoteT = Math.max(0, this.rallyNoteT - dt);
+    const fx = this.world.goalFx.group;
+    const tgt = this.currentGoal();
+    fx.position.set(tgt.x, 0, tgt.z);
+    for (let i = 0; i < this.rally.length; i++) {
+      const r = this.rally[i];
+      const f = r.d.front;
+      if (Math.hypot(f.x - P.pos.x, f.z - P.pos.z) > 0.85) continue;
+      if (i === this.rallyIdx) {
+        this.rallyTalk(r, true);
+        return true;
+      }
+      if (!r.done && this.rallyNoteT <= 0) {
+        this.rallyTalk(r, false);
+        return true;
+      }
+      if (r.done && this.rallyNoteT <= 0) {
+        this.rallyNoteT = 3;
+        this.ui.bubble(r, pick(Math.random, RALLY_REJECT.kacho), 'mtg', 1.5);
+      }
+    }
+    const g = this.world.spawns.goal;
+    if (Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < 0.85) {
+      if (this.rallyIdx >= this.rally.length) this.reachGoal();
+      else if (this.rallyNoteT <= 0) {
+        this.rallyNoteT = 3;
+        this.ui.float(P.pos.x, 2.3, P.pos.z, `ハンコがまだ${this.rally.length - this.rallyIdx}つ足りない`, 'info');
+      }
+    }
+    return false;
+  }
+
+  rallyTalk(r, ok) {
+    const P = this.player;
+    this.state = 'talk';
+    P.frozen = true;
+    P.vel.set(0, 0);
+    P.char.faceDir(r.d.x - P.pos.x, r.d.z - P.pos.z);
+    P.char.pose = 'bow';
+    r.char.pose = 'talk';
+    this.ui.clearWorld();
+    this.ui.aura(0);
+    const penalty = ok ? 3 : 5;
+    this.world.goalFx.group.visible = false;
+    this.openTalk({
+      who: { nick: r.npc.nick, role: r.npc.role, name: r.npc.name },
+      portrait: this.ui.portraits[r.npc === GOAL_NPC.boss ? 'boss' : r.npc === GOAL_NPC.kacho ? 'kacho' : 'jomu'],
+      tint: r.npc.tint === '#1b2340' ? '#ffd84d' : r.npc.tint,
+      lines: ok ? (r.npc.rallyLines || r.npc.lines) : RALLY_REJECT[r.npc === GOAL_NPC.boss ? 'boss' : 'jomu'],
+      voice: r.npc.voice,
+      penalty,
+      stamp: ok ? [r.npc.stamp, `<br>-${penalty}分`] : ['差し戻し', `<br>-${penalty}分`],
+      focus: r,
+      onDone: () => {
+        r.char.pose = 'sit';
+        this.world.goalFx.group.visible = true;
+        P.frozen = false;
+        P.char.pose = 'idle';
+        P.invulnT = 1.5;
+        if (ok) {
+          this.rallyNoteT = 3;
+          r.done = true;
+          r.char.setMood('happy');
+          this.rallyIdx++;
+          this.audio.stamp();
+          this.fx.sparkle(P.pos.x, 1.2, P.pos.z, 12);
+          const next = this.rally[this.rallyIdx];
+          this.ui.setRally(this.rally, this.rallyIdx, next ? `${next.label}席` : this.stage.goalLabel);
+        } else {
+          // 一歩下がる
+          const z = P.pos.z + 1;
+          if (this.world.grid.isWalkWorld(P.pos.x, z)) P.pos.z = z;
+          this.rallyNoteT = 2;
+        }
+        this.input.reset();
+        if (this.clock >= this.stage.deadline) this.fail();
+        else this.state = 'play';
+      },
+    });
+  }
+
   reachGoal() {
     if (this.goalReached) return;
     this.goalReached = true;
@@ -851,7 +998,7 @@ class Game {
           this.celebrate();
         },
       });
-    } else if (type === 'spot') {
+    } else if (type === 'spot' || type === 'rally') {
       P.char.faceDir(0, -1);
       P.char.pose = 'bow';
       this.audio.ding();

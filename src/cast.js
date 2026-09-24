@@ -346,3 +346,45 @@ export const WORKER_TOPS = [
 ];
 
 GOAL_NPC.keiri.look = CAST.keiri.look;
+
+// ハンコラリーの決裁者
+GOAL_NPC.kacho = {
+  name: '黒木課長',
+  role: '企画部',
+  nick: '課長',
+  tint: '#ffcf3a',
+  voice: { freq: 130, type: 'triangle' },
+  look: CAST.mtg.look,
+  lines: ['お、稟議書ね。…ついでに30分だけMTG…', '…いや、今日はハンコだけね。（読まずに押す）', 'はい、ポン。次は部長ね。'],
+  stamp: '課長印',
+};
+GOAL_NPC.jomu = {
+  name: '亀山常務',
+  role: '常務取締役',
+  nick: '常務',
+  tint: '#7a5ea8',
+  voice: { freq: 90, type: 'sawtooth' },
+  look: {
+    skin: '#e6b48f',
+    hair: { style: 'bald', color: '#f0ece6' },
+    top: { type: 'suit', color: '#3a2f4f' },
+    shirt: '#ffffff',
+    tie: '#7a5ea8',
+    bottom: { type: 'pants', color: '#3a2f4f' },
+    shoes: '#111111',
+    glasses: { color: '#c9a227' },
+    brows: 'normal',
+    width: 1.15,
+    scale: 1.02,
+  },
+  lines: ['……うむ。稟議書か。', '（ハンコを探して、引き出しを全部開けている）', 'あった。ポン。…お辞儀ハンコにしといたよ。'],
+  stamp: '常務印',
+};
+GOAL_NPC.boss.rallyLines = ['稟議か。どれどれ。', '課長のハンコ、ちょっと傾いてない？…まあいいか。', 'ポン。常務は午後いないから急いで。'];
+
+// 順番を飛ばしたとき
+export const RALLY_REJECT = {
+  boss: ['お、稟議？…課長のハンコがまだだね。', '先に課長にもらってきてくれる？'],
+  jomu: ['……ん？部長のハンコがないね。', '順番、大事だよ。'],
+  kacho: ['もう押したよ？次、行っといで。'],
+};

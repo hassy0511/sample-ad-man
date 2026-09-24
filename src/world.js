@@ -123,7 +123,7 @@ export class World {
     this.elevators = [];
     this.exitDoors = [];
     this.shredders = [];
-    this.spawns = { player: null, goal: null, enemies: [], boss: null, pickups: [] };
+    this.spawns = { player: null, goal: null, enemies: [], boss: null, pickups: [], desks: [] };
     this.W = this.grid.w;
     this.H = this.grid.h;
     this.maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -792,11 +792,13 @@ export class World {
     B.cyl('metal', '#6d737d', 0, 0.27, -0.95, 0.03, 0.03, 0.34, 6);
     // 名札
     const plate = new THREE.Mesh(this.track(new THREE.PlaneGeometry(0.6, 0.15)),
-      this.track(new THREE.MeshStandardMaterial({ map: this.track(textTexture(this.stage.deskName || '部長  大河原', { w: 384, h: 96, bg: '#2a1c14', color: '#e8c872', font: '800 44px "M PLUS Rounded 1c", sans-serif', radius: 6 })), roughness: 0.4 })));
+      this.track(new THREE.MeshStandardMaterial({ map: this.track(textTexture(this.stage.deskNames?.[this.spawns.desks.length] || this.stage.deskName || '部長  大河原', { w: 384, h: 96, bg: '#2a1c14', color: '#e8c872', font: '800 44px "M PLUS Rounded 1c", sans-serif', radius: 6 })), roughness: 0.4 })));
     plate.position.set(cx, 0.86, cz + 0.33);
     plate.rotation.x = -0.35;
     this.group.add(plate);
-    this.spawns.boss = { x: cx, z: cz - 0.95 };
+    const desk = { x: cx, z: cz - 0.95, front: { x: cx, z: cz + 1.1 } };
+    this.spawns.desks.push(desk);
+    this.spawns.boss ??= desk;
   }
 
   whiteboard(B, box) {
