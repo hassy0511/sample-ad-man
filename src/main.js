@@ -15,11 +15,12 @@ import { setupPwa } from './pwa.js';
 import { Ally } from './ally.js';
 import { ITEMS, itemMesh } from './items.js';
 import { Traffic } from './traffic.js';
+import { Weather } from './rain.js';
 import { clamp, damp, lerp, smooth, pick, textTexture } from './util.js';
 
 const RANK_ORDER = ['C', 'B', 'A', 'S'];
 const PITCH = 0.93;
-const TEMPO = { 1: 108, 2: 116, 3: 124 };
+const TEMPO = { 1: 108, 2: 116, 3: 124, 13: 112, 14: 120, 15: 128 };
 
 class Game {
   constructor() {
@@ -202,6 +203,41 @@ class Game {
     // 信号と車（屋外ステージ）
     this.traffic = stage.outdoor ? new Traffic(this) : null;
 
+    // 雨と濡れた床
+    const wetStage = stage.rain || stage.rainOutside || stage.map.some((r) => r.includes('~')) || this.world.spawns.enemies.some((e) => e.type === 'cleaner');
+    this.weather = wetStage ? new Weather(this) : null;
+    this.splashCD = 0;
+
+    // 空き会議室さがし
+    this.rooms = null;
+    if (stage.goalType === 'rooms' && this.world.spawns.rooms?.length) {
+      const list = this.world.spawns.rooms.map((r, i) => {
+        const name = stage.rooms?.[i] || `会議室${i + 1}`;
+        const opt = (bg) => ({ w: 384, h: 96, bg, color: '#ffffff', font: '800 40px "M PLUS Rounded 1c", sans-serif', radius: 16 });
+        const tex = { free: textTexture(`${name} 空き`, opt('#2e9e5b')), busy: textTexture(`${name} 使用中`, opt('#c0392b')) };
+        const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), new THREE.MeshBasicMaterial({ map: tex.busy, depthTest: false, transparent: true }));
+        sign.position.set(r.x, 2.3, r.z);
+        sign.renderOrder = 5;
+        this.scene.add(sign);
+        return { ...r, pos: { x: r.x, z: r.z }, name, tex, sign };
+      });
+      const sp0 = this.world.spawns.player;
+      const far = list.map((r, i) => i).filter((i) => Math.hypot(list[i].x - sp0.x, list[i].z - sp0.z) > 14);
+      const pool = far.length ? far : list.map((r, i) => i);
+      this.rooms = { list, free: pool[Math.floor(Math.random() * pool.length)], t: 0, period: 8, noteT: 0 };
+      this.setRoomSigns();
+      Object.assign(this.world.spawns.goal, { x: list[this.rooms.free].x, z: list[this.rooms.free].z });
+      this.world.goalFx.group.position.set(list[this.rooms.free].x, 0, list[this.rooms.free].z);
+    }
+
+    // 置き傘を取ってから帰る
+    this.fetch = null;
+    if (stage.goalType === 'fetch' && this.world.spawns.fetch) {
+      const f = this.world.spawns.fetch;
+      this.fetch = { phase: 'find', progress: 0, noteT: 0, tick: 0, pos: { x: f.x, z: f.z } };
+      this.world.goalFx.group.position.set(f.x, 0, f.z);
+    }
+
     // 味方のエース新人
     this.ally = this.world.spawns.ally && !demo ? new Ally(this, this.world.spawns.ally) : null;
 
@@ -314,6 +350,17 @@ class Game {
     this.ally = null;
     this.traffic?.dispose();
     this.traffic = null;
+    this.weather?.dispose();
+    this.weather = null;
+    for (const r of this.rooms?.list || []) {
+      r.sign.removeFromParent();
+      r.sign.geometry.dispose();
+      r.sign.material.dispose();
+      r.tex.free.dispose();
+      r.tex.busy.dispose();
+    }
+    this.rooms = null;
+    this.fetch = null;
     for (const c of this.print?.copiers || []) {
       if (c.sign) {
         c.sign.removeFromParent();
@@ -381,7 +428,7 @@ class Game {
         this.toIntro(i);
       });
       if (ending) {
-        this.ui.toast(ch === 1 ? '本日の業務、完了！' : '月末、乗り切った！');
+        this.ui.toast(CHAPTERS.find((c) => c.id === ch)?.ending || '本日の業務、完了！');
         this.fx.confettiBurst(this.player.pos.x, this.player.pos.z, 140);
         this.audio.clear();
       }
@@ -420,11 +467,13 @@ class Game {
     for (const e of this.enemies) this.record('met', e.type);
     if (this.rally) this.ui.setRally(this.rally, 0, `${this.rally[0].label}席`);
     if (this.print) this.ui.setGoalLabel('動くコピー機');
+    if (this.rooms) this.ui.setGoalLabel(this.rooms.list[this.rooms.free].name);
+    if (this.fetch) this.ui.setGoalLabel(this.stage.fetchLabel);
     this.state = 'flyover';
     this.flyT = 0;
     this.input.reset();
-    const g = this.world.spawns.goal;
-    this.ui.float(g.x, 2.6, g.z, `ゴール：${this.stage.goalLabel}`, 'good');
+    const g = this.flyGoal();
+    this.ui.float(g.x, 2.6, g.z, this.fetch ? `まずは：${this.stage.fetchLabel}` : this.rooms ? `いま空いている：${this.rooms.list[this.rooms.free].name}` : `ゴール：${this.stage.goalLabel}`, 'good');
     this.audio.startMusic('play', TEMPO[this.stage.id]);
     this.audio.setTension(false);
   }
@@ -509,6 +558,8 @@ class Game {
     for (const r of this.rally || []) r.char.update(dt);
     this.ally?.update(dt);
     this.traffic?.update(dt, this.state === 'play' || this.state === 'title' || this.state === 'intro');
+    this.weather?.update(dt);
+    for (const r of this.rooms?.list || []) r.sign.quaternion.copy(this.camera.quaternion);
     for (const c of this.print?.copiers || []) if (c.sign) c.sign.quaternion.copy(this.camera.quaternion);
     this.fx.update(dt);
     this.updateCamera(dt);
@@ -519,7 +570,8 @@ class Game {
     const P = this.player;
     const stage = this.stage;
     this.clock += dt * stage.rate;
-    this.playerHidden = false;
+    // 傘で顔を隠している間は、敵の判定より先に「見えない」ことにする
+    this.playerHidden = P.umbrellaT > 0;
     this.auraLevel = 0;
     this.updatePlayerField();
 
@@ -622,16 +674,23 @@ class Game {
       document.getElementById('hint-phone-n').textContent = P.phoneLeft;
     }
     this.phoneBtn.classList.toggle('on', P.phoneT > 0);
-    this.ui.goalPointer(this.camera, this.currentGoal(), true);
+    // 印刷中・傘さがし中は目印を出さない（進み具合の表示と重なるため）
+    const busy = this.printing || (this.fetch?.phase === 'find' && this.fetch.progress > 0 && Math.hypot(this.fetch.pos.x - P.pos.x, this.fetch.pos.z - P.pos.z) < 1.2);
+    this.ui.goalPointer(this.camera, this.currentGoal(), !busy);
 
     if (this.clock >= stage.deadline) {
       this.fail();
       return;
     }
+    if (this.traffic && this.weather) this.updateSplash(dt);
     if (this.rally) {
       if (this.updateRally(dt)) return;
     } else if (this.print) {
       this.updatePrint(dt);
+    } else if (this.rooms) {
+      this.updateRooms(dt);
+    } else if (this.fetch) {
+      this.updateFetch(dt);
     } else {
       const g = this.world.spawns.goal;
       if (Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < 0.85) this.reachGoal();
@@ -799,6 +858,7 @@ class Game {
     }
     this.record('caught', e.type);
     const P = this.player;
+    P.slipT = 0;
     this.state = 'talk';
     this.caught++;
     P.frozen = true;
@@ -970,7 +1030,7 @@ class Game {
   updateFlyover(dt) {
     this.flyT += dt;
     const P = this.player;
-    const g = this.world.spawns.goal;
+    const g = this.flyGoal();
     const D = 2.4;
     const k = smooth(clamp((this.flyT - 0.5) / (D - 0.9), 0, 1));
     this.cam.goalTarget.set(lerp(g.x, P.pos.x, k), 0, lerp(g.z, P.pos.z, k));
@@ -999,7 +1059,14 @@ class Game {
 
   // --- ゴール -----------------------------------------------------------------
   // --- ハンコラリー -----------------------------------------------------------
+  /** 開始演出でカメラが最初に映す場所 */
+  flyGoal() {
+    return this.fetch || this.rooms ? this.currentGoal() : this.world.spawns.goal;
+  }
+
   currentGoal() {
+    if (this.rooms) return this.rooms.list[this.rooms.free];
+    if (this.fetch) return this.fetch.phase === 'find' ? this.fetch.pos : this.world.spawns.goal;
     if (this.print) {
       const pr = this.print;
       const P = this.player;
@@ -1114,6 +1181,142 @@ class Game {
     }
   }
 
+  // --- 空き会議室さがし -------------------------------------------------------
+  setRoomSigns() {
+    const R = this.rooms;
+    R.list.forEach((r, i) => {
+      r.sign.material.map = i === R.free ? r.tex.free : r.tex.busy;
+      r.sign.material.needsUpdate = true;
+      r.sign.visible = true;
+    });
+  }
+
+  updateRooms(dt) {
+    const R = this.rooms;
+    const P = this.player;
+    R.t += dt;
+    R.noteT = Math.max(0, R.noteT - dt);
+    const cur = R.list[R.free];
+    const near = Math.hypot(cur.x - P.pos.x, cur.z - P.pos.z) < 3.5;
+    // もうすぐ予約が入る：札が点滅
+    cur.sign.visible = near || R.t < R.period - 3 || Math.floor(this.time * 6) % 2 === 0;
+    if (R.t > R.period && !near) {
+      const others = R.list.map((r, i) => i).filter((i) => i !== R.free);
+      const next = others[Math.floor(Math.random() * others.length)];
+      const old = cur;
+      R.free = next;
+      R.t = 0;
+      this.setRoomSigns();
+      const nr = R.list[next];
+      this.ui.setGoalLabel(nr.name);
+      this.ui.bubble(old, '（予約が入りました）', 'mtg', 1.6);
+      this.ui.float(P.pos.x, 2.4, P.pos.z, `${nr.name}が空いた！`, 'good');
+      this.fx.ring(nr.x, nr.z, '#2e9e5b', 2.2, 0.8);
+      this.audio.ding();
+    }
+    const tgt = R.list[R.free];
+    this.world.goalFx.group.position.set(tgt.x, 0, tgt.z);
+    for (let i = 0; i < R.list.length; i++) {
+      const r = R.list[i];
+      if (Math.hypot(r.x - P.pos.x, r.z - P.pos.z) > 0.8) continue;
+      if (i === R.free) {
+        this.world.spawns.goal.x = r.x;
+        this.world.spawns.goal.z = r.z;
+        this.reachGoal();
+        return;
+      }
+      if (R.noteT <= 0) {
+        R.noteT = 2.5;
+        this.clock += 1;
+        this.ui.bubble(r, pick(Math.random, ['（中から）使ってまーす！', '（中から）あと5分だけ延長で！', '（ノックしたら全員こっちを見た）']), 'mtg', 1.6);
+        this.ui.float(P.pos.x, 2.3, P.pos.z, '使用中！ -1分', 'minus');
+        this.audio.caught();
+      }
+    }
+  }
+
+  // --- 置き傘さがし -----------------------------------------------------------
+  updateFetch(dt) {
+    const F = this.fetch;
+    const P = this.player;
+    F.noteT = Math.max(0, F.noteT - dt);
+    const tgt = this.currentGoal();
+    this.world.goalFx.group.position.set(tgt.x, 0, tgt.z);
+    if (F.phase === 'find') {
+      const near = Math.hypot(F.pos.x - P.pos.x, F.pos.z - P.pos.z) < 1.2;
+      this.world.goalFx.group.visible = !near;
+      if (near) {
+        F.progress = Math.min(1, F.progress + dt / 2.4);
+        F.tick -= dt;
+        if (F.tick <= 0) {
+          F.tick = 0.3;
+          this.audio.noise(0.05, { freq: 1500, q: 2, vol: 0.08 });
+        }
+        this.ui.setProgress(F, F.progress, 'どれが自分の傘…？');
+      } else if (F.progress > 0) {
+        this.ui.setProgress(F, F.progress, '探索中断');
+      }
+      if (F.progress >= 1) {
+        F.phase = 'deliver';
+        this.world.goalFx.group.visible = true;
+        this.ui.setProgress(null);
+        this.ui.bubble(P, 'あった！…たぶんこれ！', 'player', 1.8);
+        this.ui.float(P.pos.x, 2.4, P.pos.z, this.stage.fetchDone, 'good');
+        this.fx.sparkle(P.pos.x, 1.2, P.pos.z, 14);
+        this.audio.stamp();
+        this.ui.setGoalLabel(this.stage.goalLabel);
+      }
+    } else {
+      const g = this.world.spawns.goal;
+      if (Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < 0.85) this.reachGoal();
+    }
+  }
+
+  // --- 車の水はね ------------------------------------------------------------
+  updateSplash(dt) {
+    const P = this.player;
+    this.splashCD = Math.max(0, this.splashCD - dt);
+    if (this.splashCD > 0 || !this.weather.isPuddle(P.pos.x, P.pos.z)) return;
+    for (const c of this.traffic.cars) {
+      if (c.v < 3 || Math.abs(c.lane.z - P.pos.z) > 1.6 || Math.abs(c.g.position.x - P.pos.x) > 1.0) continue;
+      this.splashCD = 1.5;
+      this.fx.dust(P.pos.x, (P.pos.z + c.lane.z) / 2, 14, '#bcd6f0', 1.6);
+      this.audio.noise(0.3, { freq: 1300, q: 0.6, vol: 0.3 });
+      if (P.umbrellaT > 0) {
+        this.ui.float(P.pos.x, 2.3, P.pos.z, '傘でガード！', 'good');
+        return;
+      }
+      if (P.invulnerable) {
+        this.dodges++;
+        this.ui.float(P.pos.x, 2.3, P.pos.z, 'スルッ！', 'good');
+        return;
+      }
+      P.slowT = 0.8;
+      P.char.play('stagger');
+      this.clock += 2;
+      this.shake(0.12);
+      this.ui.float(P.pos.x, 2.3, P.pos.z, 'ビシャッ！ 水はね -2分', 'minus');
+      return;
+    }
+  }
+
+  onPlayerSlip() {
+    const P = this.player;
+    this.ui.float(P.pos.x, 2.3, P.pos.z, 'ツルッ！', 'minus');
+    this.fx.dust(P.pos.x, P.pos.z, 10, '#bcd6f0', 1.2);
+    this.audio.noise(0.2, { freq: 600, q: 1, vol: 0.25 });
+    this.shake(0.1);
+  }
+
+  onEnemySlip(e) {
+    if (this.state !== 'play') return;
+    this.dodges++;
+    this.record('dodged', e.type);
+    this.ui.float(e.pos.x, 2.2, e.pos.z, 'ツルッ！ 振り切った！', 'good');
+    this.fx.dust(e.pos.x, e.pos.z, 10, '#bcd6f0', 1.2);
+    this.audio.noise(0.2, { freq: 600, q: 1, vol: 0.2 });
+  }
+
   markJammed(c) {
     const tex = textTexture('紙詰まり中', { w: 256, h: 72, bg: '#e0402f', color: '#ffffff', font: '800 38px "M PLUS Rounded 1c", sans-serif', radius: 12 });
     const m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.42), new THREE.MeshBasicMaterial({ map: tex, depthTest: false }));
@@ -1207,7 +1410,7 @@ class Game {
           this.celebrate();
         },
       });
-    } else if (type === 'spot' || type === 'rally' || type === 'print') {
+    } else if (type === 'spot' || type === 'rally' || type === 'print' || type === 'rooms') {
       P.char.faceDir(0, -1);
       P.char.pose = 'bow';
       this.audio.ding();

@@ -46,6 +46,8 @@ export class Player {
     this.energyT = 0;
     this.umbrellaT = 0;
     this.boostT = 0;
+    this.slipT = 0;
+    this.onWet = false;
     this.bowing = false;
     this.facing = new THREE.Vector2(0, -1);
 
@@ -155,7 +157,7 @@ export class Player {
   useItem() {
     const id = this.items.find((k) => !ITEMS[k].passive);
     if (!id) {
-      this.game.ui.float(this.pos.x, 2.3, this.pos.z, this.items.length ? '菓子折りは持っているだけで効く' : 'カバンは空っぽ', 'info');
+      this.game.ui.float(this.pos.x, 2.3, this.pos.z, this.items.length ? `${ITEMS[this.items[0]].short}は持っているだけで効く` : 'カバンは空っぽ', 'info');
       return;
     }
     this.takeItem(id);
@@ -169,6 +171,17 @@ export class Player {
     }
     this.game.audio.sparkle();
     this.game.onItemsChanged();
+  }
+
+  /** 濡れた床でダッシュして転ぶ */
+  slip() {
+    this.slipT = 0.95;
+    this.dashT = 0;
+    this.char.spin = 0;
+    this.char.squash = 0;
+    this.char.play('trip');
+    this.char.setMood('dizzy');
+    this.game.onPlayerSlip?.();
   }
 
   startPhone() {
@@ -208,15 +221,28 @@ export class Player {
       }
     }
 
+    const wet = !this.frozen && !this.hasItem('shoecover') && !!this.game.weather?.isWet(this.pos.x, this.pos.z);
+    this.onWet = wet;
     if (this.frozen) {
       this.vel.set(0, 0);
       c.speed = 0;
+    } else if (this.slipT > 0) {
+      // 転んで滑っていく
+      this.slipT -= dt;
+      this.vel.x = damp(this.vel.x, 0, 2.2, dt);
+      this.vel.y = damp(this.vel.y, 0, 2.2, dt);
+      input.takeDash();
+      if (this.slipT <= 0) {
+        c.pose = 'idle';
+        c.setMood('normal');
+      }
     } else {
       const mv = input.move;
       const mlen = Math.hypot(mv.x, mv.y);
       if (mlen > 0.1) this.facing.set(mv.x / mlen, mv.y / mlen);
       if (input.takeDash() && this.dashReady) this.startDash(mlen > 0.1 ? new THREE.Vector2(mv.x, mv.y) : this.facing);
 
+      if (this.dashT > 0 && wet) this.slip();
       if (this.dashT > 0) {
         this.dashT -= dt;
         this.vel.set(this.dashDir.x * DASH_SPEED, this.dashDir.y * DASH_SPEED);
@@ -237,7 +263,8 @@ export class Player {
         const sp = this.baseSpeed * this.speedFactor();
         const tx = mv.x * sp;
         const tz = mv.y * sp;
-        const lam = mlen > 0.1 ? 14 : 18;
+        // 濡れた床ではブレーキもハンドルも効きにくい
+        const lam = wet ? 2.4 : mlen > 0.1 ? 14 : 18;
         this.vel.x = damp(this.vel.x, tx, lam, dt);
         this.vel.y = damp(this.vel.y, tz, lam, dt);
       }
@@ -250,9 +277,10 @@ export class Player {
     }
     c.root.position.set(this.pos.x, 0, this.pos.z);
     const spd = Math.hypot(this.vel.x, this.vel.y);
-    c.speed = this.dashT > 0 ? 0 : spd;
+    c.speed = this.dashT > 0 || this.slipT > 0 ? 0 : spd;
     if (spd > 0.3) c.faceDir(this.vel.x, this.vel.y);
-    if (!this.frozen) c.pose = this.phoneT > 0 ? 'phone' : this.bowing && Math.hypot(this.vel.x, this.vel.y) < 0.9 ? 'bow' : 'idle';
+    if (this.slipT > 0) c.pose = 'down';
+    else if (!this.frozen) c.pose = this.phoneT > 0 ? 'phone' : this.bowing && Math.hypot(this.vel.x, this.vel.y) < 0.9 ? 'bow' : 'idle';
     this.phoneMesh.visible = this.phoneT > 0;
     this.umbrella.visible = this.umbrellaT > 0;
     if (this.umbrella.visible) this.umbrella.rotation.y += dt * 1.5;

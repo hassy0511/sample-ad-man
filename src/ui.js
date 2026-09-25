@@ -68,6 +68,8 @@ export class UI {
         });
         tabs.appendChild(t);
       }
+      const on = tabs.querySelector('.on');
+      if (on) tabs.scrollLeft = Math.max(0, on.offsetLeft - tabs.offsetLeft - 24);
       wrap.innerHTML = '';
       stages.forEach((st, i) => {
         if (st.chapter !== ch) return;
@@ -246,7 +248,7 @@ export class UI {
     }
     chip.innerHTML = slots.join('');
     const usable = items.find((k) => !ITEMS[k].passive);
-    $('btn-item-name').textContent = usable ? ITEMS[usable].short : items.length ? '菓子折り' : '空';
+    $('btn-item-name').textContent = usable ? ITEMS[usable].short : items.length ? ITEMS[items[0]].short : '空';
     $('btn-item').classList.toggle('ready', !!usable);
   }
 

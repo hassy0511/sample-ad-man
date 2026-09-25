@@ -16,7 +16,12 @@ const TUNING = {
   zandaka: { speed: 3.0, sense: 99, cooldown: 3 },
   warikomi: { notice: 2.6, printNotice: 9, chase: 3.7, chaseMax: 5, lose: 10, cooldown: 9 },
   doki: { notice: 4.6, fov: 2.4, wander: 1.4, rush: 5.3, rushMax: 1.9, lose: 9, cooldown: 7 },
+  golf: { wander: 0.9, notice: 5.5, range: 2.0, fov: 2.2, windup: 0.8, every: 2.4, cooldown: 7 },
+  cleaner: { speed: 1.25 },
 };
+
+// 濡れた床を走ると転ぶ速さ
+const SLIP_SPEED = 3.5;
 
 // 電話中のふりをすると話しかけてこない人たち
 const PHONE_RESPECT = new Set(['senpai', 'mtg', 'shinjin', 'kanji', 'doki', 'warikomi']);
@@ -71,6 +76,13 @@ export class Enemy {
       this.passT = 0;
     } else if (this.kind === 'doki') {
       this.state = 'wander';
+    } else if (this.kind === 'golf') {
+      this.cone = new VisionCone(game.scene, '#ff4b3a');
+      this.cone.visible = false;
+      this.state = 'wander';
+      this.swingT = 1 + Math.random() * 2;
+    } else if (this.kind === 'cleaner') {
+      this.state = 'work';
     } else if (this.kind === 'keiri' || this.kind === 'mtg') {
       this.cone = new VisionCone(game.scene, this.kind === 'keiri' ? '#ff4b3a' : '#ffd23f');
       this.state = this.patrol ? 'patrol' : 'stand';
@@ -156,8 +168,10 @@ export class Enemy {
       }
     }
     const sp = Math.min(speed, d * 6);
-    this.vel.x = damp(this.vel.x, wantX * sp, 10, dt);
-    this.vel.z = damp(this.vel.z, wantZ * sp, 10, dt);
+    // 濡れた床ではブレーキが効かない
+    const lam = this.kind !== 'cleaner' && this.game.weather?.isWet(this.pos.x, this.pos.z) ? 3 : 10;
+    this.vel.x = damp(this.vel.x, wantX * sp, lam, dt);
+    this.vel.z = damp(this.vel.z, wantZ * sp, lam, dt);
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
     grid.resolveCircle(this.pos, this.r);
@@ -247,6 +261,30 @@ export class Enemy {
     this.wantsCatch = false;
   }
 
+  /** 濡れた床で転ぶ */
+  slip() {
+    this.set('slipped');
+    this.char.play('trip');
+    this.char.setMood('dizzy');
+    this.say(pick(Math.random, ['うわっ！', 'ツルッ！？', 'あいたたた…']), '', 1.3);
+    this.ring?.update(this.pos.x, this.pos.z, 0);
+    if (this.cone) this.cone.visible = false;
+    this.game.onEnemySlip?.(this);
+  }
+
+  /** 起き上がったあと、ふだんの動きに戻る */
+  recover() {
+    this.char.pose = 'idle';
+    this.char.setMood('normal');
+    this.cool = Math.max(this.cool, 2.5);
+    if (TALKERS.has(this.kind)) this.set('return');
+    else if (this.kind === 'keiri' || this.kind === 'mtg') this.set(this.patrol ? 'resume' : 'stand');
+    else if (this.kind === 'doki' || this.kind === 'golf') this.set('wander');
+    else if (this.kind === 'kanji' || this.kind === 'zandaka') this.set('guard');
+    else if (this.kind === 'shinjin') this.set('return');
+    else this.set('idle');
+  }
+
   /** 会話が終わったあと */
   afterTalk() {
     this.cool = this.tune.cooldown || 6;
@@ -256,7 +294,7 @@ export class Enemy {
     if (TALKERS.has(this.kind)) this.set('return');
     else if (this.kind === 'keiri' || this.kind === 'mtg') this.set(this.patrol ? 'resume' : 'stand');
     else if (this.kind === 'kanji') this.set('guard');
-    else if (this.kind === 'doki') this.set('wander');
+    else if (this.kind === 'doki' || this.kind === 'golf') this.set('wander');
     else if (this.kind === 'shacho') this.set(this.patrol ? 'patrol' : 'stand');
     this.nearMissed = false;
   }
@@ -302,7 +340,31 @@ export class Enemy {
       return;
     }
 
+    // 濡れた床を走って転ぶ
+    if ((this.state === 'chase' || this.state === 'rush') && Math.hypot(this.vel.x, this.vel.z) > SLIP_SPEED && this.game.weather?.isWet(this.pos.x, this.pos.z)) {
+      this.slip();
+    }
+    if (this.state === 'slipped') {
+      this.vel.x = damp(this.vel.x, 0, 2.5, dt);
+      this.vel.z = damp(this.vel.z, 0, 2.5, dt);
+      this.pos.x += this.vel.x * dt;
+      this.pos.z += this.vel.z * dt;
+      this.game.world.grid.resolveCircle(this.pos, this.r);
+      c.root.position.set(this.pos.x, 0, this.pos.z);
+      c.speed = 0;
+      if (this.t > 0.3) c.pose = 'down';
+      c.update(dt);
+      if (this.t > 1.6) this.recover();
+      return;
+    }
+
     switch (this.kind) {
+      case 'golf':
+        pose = this.updateGolf(dt, dist, hidden);
+        break;
+      case 'cleaner':
+        pose = this.updateCleaner(dt, dist);
+        break;
       case 'senpai':
       case 'warikomi':
         pose = this.updateSenpai(dt, dist, hidden);
@@ -835,6 +897,121 @@ export class Enemy {
     c.speed = spd;
     if (spd > 0.25) c.faceDir(this.vel.x, this.vel.z);
     c.update(dt);
+  }
+
+  // --- 傘ゴルフおじさん -------------------------------------------------------
+  updateGolf(dt, dist, hidden) {
+    const T = this.tune;
+    const c = this.char;
+    const grid = this.game.world.grid;
+    const P = this.player;
+    switch (this.state) {
+      case 'wander': {
+        this.cone.visible = false;
+        if (!this.wanderTo || this.t > 4) {
+          for (let i = 0; i < 10; i++) {
+            const tx = Math.floor(this.home.x + (Math.random() - 0.5) * 6);
+            const tz = Math.floor(this.home.z + (Math.random() - 0.5) * 4);
+            if (grid.isWalk(tx, tz)) {
+              this.wanderTo = { x: tx + 0.5, z: tz + 0.5 };
+              break;
+            }
+          }
+          this.t = 0;
+        }
+        if (this.wanderTo && this.moveTo(this.wanderTo.x, this.wanderTo.z, T.wander, dt) < 0.3) this.wanderTo = null;
+        this.swingT -= dt * (dist < T.notice ? 1.6 : 1);
+        if (this.swingT <= 0 && this.cool <= 0) {
+          // 近くに人がいればそちらへ、いなければ気まぐれな方向へ構える
+          const aim = dist < T.notice && !hidden
+            ? Math.atan2(P.pos.x - this.pos.x, P.pos.z - this.pos.z)
+            : Math.random() * Math.PI * 2;
+          this.aim = aim;
+          this.set('address');
+          this.wanderTo = null;
+        }
+        return 'idle';
+      }
+      case 'address': {
+        this.stop(dt);
+        c.targetYaw = this.aim;
+        const k = Math.min(1, this.t / T.windup);
+        this.cone.visible = true;
+        this.cone.update(grid, this.pos.x, this.pos.z, this.aim, T.fov, T.range, 0.35 + k * 0.65 + Math.sin(this.t * 30) * 0.12 * k);
+        if (this.t > T.windup) {
+          c.play('swing');
+          this.say(pick(Math.random, this.cfg.swingLines), 'golf', 1.1);
+          this.game.audio.noise?.(0.18, { freq: 900, q: 0.8, vol: 0.2 });
+          this.hitDone = false;
+          this.set('swing');
+        }
+        return 'address';
+      }
+      case 'swing': {
+        this.stop(dt);
+        this.cone.update(grid, this.pos.x, this.pos.z, this.aim, T.fov, T.range, Math.max(0, 1 - this.t * 2.5));
+        if (!this.hitDone && this.t > 0.1 && this.t < 0.3) {
+          const dx = P.pos.x - this.pos.x;
+          const dz = P.pos.z - this.pos.z;
+          const d = Math.hypot(dx, dz);
+          const inArc = d < T.range + P.r && (d < 0.5 || Math.abs(wrapAngle(Math.atan2(dx, dz) - this.aim)) < T.fov / 2);
+          if (inArc && !this.game.playerHidden && this.game.state === 'play') {
+            this.hitDone = true;
+            if (P.invulnerable) this.game.nearMiss?.(this);
+            else this.wantsCatch = true;
+          }
+        }
+        if (this.t > 0.2 && this.t < 0.3) this.game.fx.dust(this.pos.x + Math.sin(this.aim) * 1.2, this.pos.z + Math.cos(this.aim) * 1.2, 1, '#e8eef5', 0.6);
+        if (this.t > 0.75) {
+          this.cone.visible = false;
+          this.swingT = T.every + Math.random() * 1.4;
+          this.set('wander');
+        }
+        return 'address';
+      }
+      default:
+        return 'idle';
+    }
+  }
+
+  // --- 清掃員 -----------------------------------------------------------------
+  updateCleaner(dt, dist) {
+    const T = this.tune;
+    const c = this.char;
+    if (this.patrol) {
+      const wp = this.patrol[this.pi];
+      if (this.moveTo(wp.x, wp.z, T.speed, dt) < 0.2) {
+        if (this.pi + this.pdir >= this.patrol.length || this.pi + this.pdir < 0) this.pdir *= -1;
+        this.pi += this.pdir;
+      }
+    } else {
+      if (!this.wanderTo || this.t > 6) {
+        const grid = this.game.world.grid;
+        for (let i = 0; i < 10; i++) {
+          const tx = Math.floor(this.home.x + (Math.random() - 0.5) * 10);
+          const tz = Math.floor(this.home.z + (Math.random() - 0.5) * 6);
+          if (grid.isWalk(tx, tz)) {
+            this.wanderTo = { x: tx + 0.5, z: tz + 0.5 };
+            break;
+          }
+        }
+        this.t = 0;
+      }
+      if (this.wanderTo && this.moveTo(this.wanderTo.x, this.wanderTo.z, T.speed, dt) < 0.3) this.wanderTo = null;
+    }
+    // 通ったあとを拭いていく（少し後ろのマスも）
+    const w = this.game.weather;
+    if (w) {
+      w.mop(this.pos.x, this.pos.z);
+      const sp = Math.hypot(this.vel.x, this.vel.z) || 1;
+      w.mop(this.pos.x - (this.vel.x / sp) * 0.9, this.pos.z - (this.vel.z / sp) * 0.9);
+    }
+    this.lineT -= dt;
+    if (dist < 3.2 && this.lineT < 0) {
+      this.lineT = 3 + Math.random() * 2;
+      this.say(pick(Math.random, this.cfg.notice), 'cleaner', 1.4);
+    }
+    return 'mop';
   }
 
   // --- ティッシュ配り ---------------------------------------------------------

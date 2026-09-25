@@ -21,9 +21,16 @@ export const ITEMS = {
     color: '#c9a227',
     passive: true,
   },
+  shoecover: {
+    name: '防水シューズカバー',
+    short: '靴カバー',
+    desc: '持っているだけでOK。濡れた床でも滑らず、ダッシュしても転ばない。',
+    color: '#3aa0d8',
+    passive: true,
+  },
 };
 
-export const ITEM_CODES = { E: 'energy', U: 'umbrella', O: 'omiyage' };
+export const ITEM_CODES = { E: 'energy', U: 'umbrella', O: 'omiyage', S: 'shoecover' };
 export const BAG_SIZE = 2;
 
 /** 床に置くアイテムの見た目 */
@@ -43,6 +50,17 @@ export function itemMesh(id) {
     handle.position.y = -0.28;
     g.add(body, strap, handle);
     g.rotation.z = 0.5;
+  } else if (id === 'shoecover') {
+    // 靴の形をした透明ブルーのカバー
+    const mat = std('#3aa0d8', { transparent: true, opacity: 0.85, roughness: 0.15 });
+    for (const sx of [-0.1, 0.1]) {
+      const toe = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 8), mat);
+      toe.scale.set(0.9, 0.6, 1.5);
+      toe.position.set(sx, -0.02, 0.05);
+      const heel = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.085, 0.14, 12), mat);
+      heel.position.set(sx, 0.02, -0.07);
+      g.add(toe, heel);
+    }
   } else {
     const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.18, 0.3), std('#f3ead8'));
     const wrap = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.19, 0.08), std('#c0392b'));

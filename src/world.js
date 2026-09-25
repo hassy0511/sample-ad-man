@@ -44,6 +44,14 @@ export const LIGHTING = {
     far: '#bcc7d3', mid: '#a3b0c0', near: '#8997aa', windows: 0.04, windowColor: 'rgba(255,255,255,0.6)',
     sunDisc: null, bloom: 0.14, tint: [1.04, 1.01, 0.97], sat: 1.1, vignette: 0.32, screenBoost: 1.15,
   },
+  rain: {
+    exposure: 0.9, hemiSky: '#c3cedb', hemiGround: '#7f838b', hemi: 1.15,
+    sun: '#dfe7f2', sunI: 1.3, sunDir: [0.3, 1.0, 0.5],
+    bgTop: '#6f7c8c', bgBottom: '#c3cad3', fog: '#b4bdc8', env: 0.5,
+    cityTop: '#6c7988', cityMid: '#a2adba', cityBottom: '#c9d0d8', cloud: 'rgba(150,160,175,0.95)',
+    far: '#8c98a6', mid: '#788596', near: '#647284', windows: 0.3, windowColor: '#ffe9b0',
+    sunDisc: null, bloom: 0.16, tint: [0.97, 1.0, 1.05], sat: 0.9, vignette: 0.4, screenBoost: 1.45,
+  },
   night: {
     exposure: 1.15, hemiSky: '#4a5a9a', hemiGround: '#2a2438', hemi: 0.75,
     sun: '#a9bcff', sunI: 1.1, sunDir: [0.35, 1.0, -0.25],
@@ -161,6 +169,8 @@ export class World {
         else if (c === 'G') this.spawns.goal = { x: x + 0.5, z: y + 0.5 };
         else if (c === 'C') this.spawns.pickups.push({ x: x + 0.5, z: y + 0.5 });
         else if (c === 'A') this.spawns.ally = { x: x + 0.5, z: y + 0.5 };
+        else if (c === 'K') this.spawns.fetch = { x: x + 0.5, z: y + 0.5 };
+        else if (c === '0') (this.spawns.rooms ||= []).push({ x: x + 0.5, z: y + 0.5 });
         else if (ITEM_CODES[c]) (this.spawns.items ||= []).push({ id: ITEM_CODES[c], x: x + 0.5, z: y + 0.5 });
         else if (ENEMY_CODES[c]) {
           order[c] = order[c] || 0;
@@ -168,6 +178,8 @@ export class World {
         }
       }
     }
+    // ゴールが決まっていない（空き会議室が変わる）ステージ
+    if (!this.spawns.goal) this.spawns.goal = { ...(this.spawns.rooms?.[0] || this.spawns.fetch || this.spawns.player) };
     // 床の種類（家具タイルは近くの床から推定）
     const ft = new Array(this.W * this.H).fill('.');
     const isFloor = (c) => '.;,:_=z'.includes(c);

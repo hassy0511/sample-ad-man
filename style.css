@@ -846,8 +846,19 @@ kbd {
 .is-app .install-btn { display: none; }
 
 /* --------------------------------------------------------------- 第2章で追加 */
-.chapter-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.chapter-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 5px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+.chapter-tabs::-webkit-scrollbar { display: none; }
 .chapter-tab {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -990,6 +1001,9 @@ kbd {
 .ally-card b em { font-style: normal; font-size: 0.68rem; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: #2fb3c9; color: #fff; vertical-align: 2px; }
 .bubble.ally { background: #e3f7fb; border-color: #1f8aa0; box-shadow: 0 3px 0 #1f8aa0; }
 .bubble.ally::after { border-color: #1f8aa0; }
+.bubble.golf { background: #eaf6ee; border-color: #1f6b43; box-shadow: 0 3px 0 #1f6b43; }
+.bubble.golf::after { border-color: #1f6b43; }
+.bubble.cleaner { background: #e8f4fb; }
 @media (max-width: 640px) { .hud-ally { font-size: 0; padding: 0 6px; } }
 
 /* --------------------------------------------------------------- 印刷の進み具合 */

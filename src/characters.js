@@ -156,6 +156,14 @@ function buildHead(look, lite) {
     b.add(unitBox, look.headband, M(0.26, C + 0.2, -0.2, 0.3, 0.4, 0.9, 0.04, 0.16, 0.02));
     b.add(unitBox, look.headband, M(0.3, C + 0.16, -0.18, 0.1, 0.3, 1.3, 0.04, 0.14, 0.02));
   }
+  if (look.hat) {
+    // 制帽・作業帽
+    const h = look.hat;
+    b.add(cyl(0.3, 0.315, 0.13, 20), h.color, M(0, C + 0.21, -0.01, -0.12, 0, 0));
+    b.add(cyl(0.325, 0.3, 0.05, 20), h.color, M(0, C + 0.29, -0.02, -0.12, 0, 0));
+    b.add(unitBox, h.visor || '#15151c', M(0, C + 0.15, 0.3, 0.25, 0, 0, 0.34, 0.025, 0.17));
+    if (h.band) b.add(cyl(0.306, 0.316, 0.035, 20), h.band, M(0, C + 0.17, -0.005, -0.12, 0, 0));
+  }
   if (lite) {
     for (const sx of [1, -1]) b.add(sph(), '#15151c', M(sx * 0.1, C + 0.005, 0.272, 0, 0, 0, 0.032, 0.046, 0.028));
   }
@@ -251,6 +259,17 @@ function addProp(b, name, side) {
       break;
     case 'wallet':
       b.add(rbox(0.1, 0.07, 0.03, 0.01), '#8a5a3a', M(hx, hy - 0.04, 0.05));
+      break;
+    case 'kasa':
+      // 閉じた長傘（ゴルフクラブのように持つ）
+      b.add(torus(0.035, 0.011, 6, 10, Math.PI), '#6b3b1f', M(hx, hy + 0.02, 0.03, 0, Math.PI / 2, 0));
+      b.add(cyl(0.012, 0.012, 0.8, 6), '#8a919c', M(hx, hy - 0.4, 0.03));
+      b.add(cyl(0.045, 0.012, 0.5, 8), '#1f4f7a', M(hx, hy - 0.5, 0.03));
+      break;
+    case 'mop':
+      b.add(cyl(0.014, 0.014, 1.1, 6), '#c9ccd1', M(hx, hy - 0.2, 0.05));
+      b.add(unitBox, '#5dade2', M(hx, hy - 0.73, 0.05, 0, 0, 0, 0.1, 0.05, 0.08));
+      b.add(unitBox, '#eceae3', M(hx, hy - 0.78, 0.05, 0, 0, 0, 0.36, 0.06, 0.14));
       break;
     case 'bag':
       b.add(rbox(0.09, 0.24, 0.34, 0.03), '#3b2a22', M(hx, hy - 0.16, 0));
@@ -487,11 +506,12 @@ export class Character {
     let headZ = 0;
     let rigRotX = 0;
     let rigY = 0;
+    let swingY = 0;
     const breathe = 1 + Math.sin(t * 2.4) * 0.012 * (1 - a);
 
     // 持ち物による腕の基本姿勢
     const carryL = { papers: -0.9, notebook: -0.75, clipboard: -0.7, list: -0.7, folder: 0.05, laptop: 0.05, bag: 0 }[this.propL];
-    const carryR = { mug: -0.55, redpen: -0.45, wallet: -0.3, penlight: -0.5, phone: -0.95 }[this.propR];
+    const carryR = { mug: -0.55, redpen: -0.45, wallet: -0.3, penlight: -0.5, phone: -0.95, kasa: -0.15, mop: -0.45 }[this.propR];
     if (carryL !== undefined) {
       armL = carryL + armL * 0.25;
       if (this.propL === 'folder' || this.propL === 'laptop') armLz = 0.02;
@@ -572,6 +592,24 @@ export class Character {
       case 'look':
         headZ = Math.sin(t * 1.3) * 0.08;
         break;
+      case 'address':
+        // ゴルフの構え（両手で傘を握る）
+        armL = armR = -0.45;
+        armLz = 0.42;
+        armRz = -0.42;
+        lean = 0.32;
+        headX = 0.35;
+        legL = 0.12;
+        legR = -0.12;
+        break;
+      case 'mop':
+        armR = -0.5 + Math.sin(t * 6) * 0.35;
+        armL = -0.7 + Math.sin(t * 6) * 0.35;
+        armLz = 0.45;
+        armRz = -0.15;
+        lean = 0.2;
+        headX = 0.25;
+        break;
       default:
         break;
     }
@@ -597,6 +635,15 @@ export class Character {
       } else if (this.action === 'jump') {
         rigY = Math.sin(Math.min(1, k / 0.35) * Math.PI) * 0.35;
         if (k > 0.35) this.action = null;
+      } else if (this.action === 'swing') {
+        // 振りかぶって、振り抜く
+        if (k < 0.12) armL = armR = lerpN(-0.45, 1.6, k / 0.12);
+        else if (k < 0.26) armL = armR = lerpN(1.6, -2.6, (k - 0.12) / 0.14);
+        else if (k < 0.7) armL = armR = -2.6;
+        else this.action = null;
+        armLz = 0.42;
+        armRz = -0.42;
+        swingY = k < 0.12 ? lerpN(0, 0.9, k / 0.12) : k < 0.26 ? lerpN(0.9, -1.2, (k - 0.12) / 0.14) : k < 0.7 ? -1.2 : 0;
       } else if (this.action === 'hop') {
         rigY = Math.sin(Math.min(1, k / 0.22) * Math.PI) * 0.15;
         if (k > 0.22) this.action = null;
@@ -609,7 +656,8 @@ export class Character {
     this.legL.rotation.x = legL;
     this.legR.rotation.x = legR;
     this.armL.rotation.x = damp(this.armL.rotation.x, armL, 18, dt);
-    this.armR.rotation.x = this.action === 'throw' ? armR : damp(this.armR.rotation.x, armR, 18, dt);
+    this.armR.rotation.x = this.action === 'throw' || this.action === 'swing' ? armR : damp(this.armR.rotation.x, armR, 18, dt);
+    if (this.action === 'swing') this.armL.rotation.x = armL;
     this.armL.rotation.z = damp(this.armL.rotation.z, armLz, 14, dt);
     this.armR.rotation.z = damp(this.armR.rotation.z, armRz, 14, dt);
     this.torso.scale.y = breathe;
@@ -620,7 +668,7 @@ export class Character {
 
     this.rig.position.y = bob + rigY + this.lift;
     this.rig.rotation.x = damp(this.rig.rotation.x, rigRotX || lean, 14, dt);
-    this.rig.rotation.y = this.spin;
+    this.rig.rotation.y = this.spin + swingY;
     const sq = this.squash;
     this.rig.scale.set(1 + sq, 1 - sq, 1 + sq);
 
