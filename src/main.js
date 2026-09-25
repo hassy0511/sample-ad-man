@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { STAGES, CHAPTERS } from './levels.js';
-import { CAST, BOSS, PLAYER_LOOK, GOAL_NPC, RALLY_REJECT, ALLY } from './cast.js';
+import { CAST, BOSS, PLAYER_LOOK, GOAL_NPC, RALLY_REJECT, ALLY, COPIER } from './cast.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { Enemy } from './enemies.js';
@@ -13,7 +13,7 @@ import { UI } from './ui.js';
 import { Post } from './post.js';
 import { setupPwa } from './pwa.js';
 import { Ally } from './ally.js';
-import { clamp, damp, lerp, smooth, pick } from './util.js';
+import { clamp, damp, lerp, smooth, pick, textTexture } from './util.js';
 
 const RANK_ORDER = ['C', 'B', 'A', 'S'];
 const PITCH = 0.93;
@@ -143,6 +143,7 @@ class Game {
     looks.boss = BOSS.look;
     looks.kacho = GOAL_NPC.kacho.look;
     looks.ally = ALLY.look;
+    looks.judge = GOAL_NPC.judge.look;
     looks.jomu = GOAL_NPC.jomu.look;
     looks.player = PLAYER_LOOK;
     try {
@@ -198,6 +199,25 @@ class Game {
 
     // 味方のエース新人
     this.ally = this.world.spawns.ally && !demo ? new Ally(this, this.world.spawns.ally) : null;
+
+    // コピー機探し
+    this.print = null;
+    this.printing = false;
+    if (stage.goalType === 'print' && this.world.copiers?.length) {
+      const sp0 = this.world.spawns.player;
+      const far = this.world.copiers.map((c, i) => i).filter((i) => {
+        const c = this.world.copiers[i];
+        return Math.hypot(c.x - sp0.x, c.z - sp0.z) > 12;
+      });
+      const pickFrom = far.length ? far : this.world.copiers.map((c, i) => i);
+      const working = demo ? -1 : pickFrom[Math.floor(Math.random() * pickFrom.length)];
+      this.print = {
+        copiers: this.world.copiers.map((c, i) => ({ ...c, pos: { x: c.x, z: c.z }, working: i === working, checked: false })),
+        phase: 'find',
+        progress: 0,
+        noteT: 0,
+      };
+    }
 
     // ハンコラリーの決裁者
     this.rally = null;
@@ -279,6 +299,17 @@ class Game {
     this.player = null;
     this.ally?.dispose();
     this.ally = null;
+    for (const c of this.print?.copiers || []) {
+      if (c.sign) {
+        c.sign.removeFromParent();
+        c.sign.geometry.dispose();
+        c.sign.material.map.dispose();
+        c.sign.material.dispose();
+      }
+    }
+    this.print = null;
+    this.printing = false;
+    this.ui.setProgress(null);
     for (const r of this.rally || []) {
       r.char.root.removeFromParent();
       for (const m of r.char.meshes) m.geometry.dispose();
@@ -371,6 +402,7 @@ class Game {
     this.ui.setAlly(false);
     for (const e of this.enemies) this.record('met', e.type);
     if (this.rally) this.ui.setRally(this.rally, 0, `${this.rally[0].label}席`);
+    if (this.print) this.ui.setGoalLabel('動くコピー機');
     this.state = 'flyover';
     this.flyT = 0;
     this.input.reset();
@@ -459,6 +491,7 @@ class Game {
     if (this.world.playerLight && P) this.world.playerLight.position.set(P.pos.x, 2.6, P.pos.z + 0.4);
     for (const r of this.rally || []) r.char.update(dt);
     this.ally?.update(dt);
+    for (const c of this.print?.copiers || []) if (c.sign) c.sign.quaternion.copy(this.camera.quaternion);
     this.fx.update(dt);
     this.updateCamera(dt);
   }
@@ -555,6 +588,8 @@ class Game {
     }
     if (this.rally) {
       if (this.updateRally(dt)) return;
+    } else if (this.print) {
+      this.updatePrint(dt);
     } else {
       const g = this.world.spawns.goal;
       if (Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < 0.85) this.reachGoal();
@@ -911,6 +946,23 @@ class Game {
   // --- ゴール -----------------------------------------------------------------
   // --- ハンコラリー -----------------------------------------------------------
   currentGoal() {
+    if (this.print) {
+      const pr = this.print;
+      const P = this.player;
+      if (pr.phase === 'deliver') return this.world.spawns.goal;
+      if (pr.phase === 'printing') return pr.copiers.find((c) => c.working).front;
+      let best = null;
+      let bd = Infinity;
+      for (const c of pr.copiers) {
+        if (c.checked) continue;
+        const d = Math.hypot(c.front.x - P.pos.x, c.front.z - P.pos.z);
+        if (d < bd) {
+          bd = d;
+          best = c;
+        }
+      }
+      return best ? best.front : this.world.spawns.goal;
+    }
     if (!this.rally || this.rallyIdx >= this.rally.length) return this.world.spawns.goal;
     return this.rally[this.rallyIdx].d.front;
   }
@@ -947,6 +999,74 @@ class Game {
       }
     }
     return false;
+  }
+
+  // --- コピー機探し -----------------------------------------------------------
+  updatePrint(dt) {
+    const P = this.player;
+    const pr = this.print;
+    pr.noteT = Math.max(0, pr.noteT - dt);
+    const tgt = this.currentGoal();
+    this.world.goalFx.group.position.set(tgt.x, 0, tgt.z);
+    this.world.goalFx.group.visible = pr.phase !== 'printing';
+    this.printing = false;
+    if (pr.phase === 'find') {
+      for (const c of pr.copiers) {
+        if (c.checked || Math.hypot(c.front.x - P.pos.x, c.front.z - P.pos.z) > 0.9) continue;
+        if (c.working) {
+          pr.phase = 'printing';
+          this.ui.bubble(c, COPIER.start, 'player', 1.8);
+          this.audio.ding();
+          this.ui.setGoalLabel('印刷中のコピー機');
+        } else {
+          c.checked = true;
+          this.clock += 2;
+          this.ui.bubble(c, pick(Math.random, COPIER.jammed), 'keiri', 1.8);
+          this.ui.float(P.pos.x, 2.3, P.pos.z, 'はずれ！ -2分', 'minus');
+          this.audio.caught();
+          this.markJammed(c);
+          this.ui.setGoalLabel('動くコピー機');
+        }
+        break;
+      }
+    } else if (pr.phase === 'printing') {
+      const c = pr.copiers.find((k) => k.working);
+      const near = Math.hypot(c.front.x - P.pos.x, c.front.z - P.pos.z) < 1.5;
+      if (near) {
+        this.printing = true;
+        pr.progress = Math.min(1, pr.progress + dt / 4.5);
+        pr.tick = (pr.tick || 0) - dt;
+        if (pr.tick <= 0) {
+          pr.tick = 0.35;
+          this.audio.noise(0.07, { freq: 700, q: 1.5, vol: 0.12 });
+        }
+      } else if (pr.noteT <= 0) {
+        pr.noteT = 3;
+        this.ui.float(P.pos.x, 2.3, P.pos.z, '離れると印刷が止まる！', 'info');
+      }
+      this.ui.setProgress(c, pr.progress, near ? '印刷中' : '一時停止');
+      if (pr.progress >= 1) {
+        pr.phase = 'deliver';
+        this.ui.setProgress(null);
+        this.ui.bubble(c, COPIER.done, 'player', 2);
+        this.ui.float(P.pos.x, 2.3, P.pos.z, '印刷完了！', 'good');
+        this.fx.papers(c.x, 1.2, c.z, 6, 0.6);
+        this.audio.stamp();
+        this.ui.setGoalLabel(this.stage.goalLabel);
+      }
+    } else {
+      const g = this.world.spawns.goal;
+      if (Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < 0.85) this.reachGoal();
+    }
+  }
+
+  markJammed(c) {
+    const tex = textTexture('紙詰まり中', { w: 256, h: 72, bg: '#e0402f', color: '#ffffff', font: '800 38px "M PLUS Rounded 1c", sans-serif', radius: 12 });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.42), new THREE.MeshBasicMaterial({ map: tex, depthTest: false }));
+    m.position.set(c.x, 1.7, c.z);
+    m.renderOrder = 5;
+    this.scene.add(m);
+    c.sign = m;
   }
 
   rallyTalk(r, ok) {
@@ -1033,7 +1153,7 @@ class Game {
           this.celebrate();
         },
       });
-    } else if (type === 'spot' || type === 'rally') {
+    } else if (type === 'spot' || type === 'rally' || type === 'print') {
       P.char.faceDir(0, -1);
       P.char.pose = 'bow';
       this.audio.ding();

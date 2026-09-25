@@ -12,11 +12,14 @@ const TUNING = {
   shinjin: { notice: 3.4, follow: 11, shoutEvery: 2.6, shoutR: 7.5, cooldown: 10 },
   kanji: { speed: 3.5, sense: 10, cooldown: 3.5 },
   shacho: { fov: 1.9, range: 7.2, patrol: 1.15, still: 0.9, cooldown: 12 },
+  warikomi: { notice: 2.6, printNotice: 9, chase: 3.7, chaseMax: 5, lose: 10, cooldown: 9 },
   doki: { notice: 4.6, fov: 2.4, wander: 1.4, rush: 5.3, rushMax: 1.9, lose: 9, cooldown: 7 },
 };
 
 // 電話中のふりをすると話しかけてこない人たち
-const PHONE_RESPECT = new Set(['senpai', 'mtg', 'shinjin', 'kanji', 'doki']);
+const PHONE_RESPECT = new Set(['senpai', 'mtg', 'shinjin', 'kanji', 'doki', 'warikomi']);
+// 近づくと話しかけてくるタイプ
+const TALKERS = new Set(['senpai', 'warikomi']);
 
 const _dir = { x: 0, z: 0 };
 
@@ -68,8 +71,8 @@ export class Enemy {
       this.cone = new VisionCone(game.scene, this.type === 'keiri' ? '#ff4b3a' : '#ffd23f');
       this.state = this.patrol ? 'patrol' : 'stand';
       if (this.patrol) this.pi = this.nearestWaypoint();
-    } else if (this.type === 'senpai' || this.type === 'shinjin') {
-      this.ring = new RangeRing(game.scene, this.type === 'senpai' ? '#f0a23b' : '#3aa56c', this.tune.notice);
+    } else if (TALKERS.has(this.type) || this.type === 'shinjin') {
+      this.ring = new RangeRing(game.scene, { senpai: '#f0a23b', warikomi: '#8e6cc7', shinjin: '#3aa56c' }[this.type], this.tune.notice);
       this.state = 'idle';
     } else if (this.type === 'kanji') {
       this.state = 'guard';
@@ -183,7 +186,8 @@ export class Enemy {
     switch (this.type) {
       case 'doki': return ['wander', 'notice', 'rush'].includes(this.state);
       case 'shacho': return false;
-      case 'senpai': return ['idle', 'notice', 'chase', 'return'].includes(this.state);
+      case 'senpai':
+      case 'warikomi': return ['idle', 'notice', 'chase', 'return'].includes(this.state);
       case 'keiri':
       case 'mtg': return ['patrol', 'stand', 'spotted', 'chase', 'resume'].includes(this.state);
       case 'kanji': return this.state === 'guard';
@@ -197,7 +201,7 @@ export class Enemy {
 
   alert() {
     if (this.cool > 0) return;
-    if (this.type === 'senpai' && (this.state === 'idle' || this.state === 'return')) this.notice();
+    if (TALKERS.has(this.type) && (this.state === 'idle' || this.state === 'return')) this.notice();
     else if ((this.type === 'keiri' || this.type === 'mtg') && ['patrol', 'stand', 'resume'].includes(this.state)) this.spot();
     else if (this.type === 'shorui' && this.state === 'idle') this.throwT = 0;
     else if (this.type === 'doki' && this.state === 'wander') this.dokiNotice();
@@ -244,7 +248,7 @@ export class Enemy {
     this.char.setMood('happy');
     if (this.cfg.after) this.say(pick(Math.random, this.cfg.after), '', 1.8);
     this.char.pose = this.type === 'kanji' ? 'dance' : 'idle';
-    if (this.type === 'senpai') this.set('return');
+    if (TALKERS.has(this.type)) this.set('return');
     else if (this.type === 'keiri' || this.type === 'mtg') this.set(this.patrol ? 'resume' : 'stand');
     else if (this.type === 'kanji') this.set('guard');
     else if (this.type === 'doki') this.set('wander');
@@ -295,6 +299,7 @@ export class Enemy {
 
     switch (this.type) {
       case 'senpai':
+      case 'warikomi':
         pose = this.updateSenpai(dt, dist, hidden);
         break;
       case 'keiri':
@@ -338,7 +343,9 @@ export class Enemy {
         this.stop(dt);
         c.headYaw = Math.sin(this.t * 0.8) * 0.5;
         c.targetYaw = this.homeYaw;
-        if (!hidden && this.cool <= 0 && this.sees(T.notice, Math.PI * 2, 0)) this.notice();
+        // 割り込み係長は、印刷中の人なら遠くからでも気づく
+        const range = this.type === 'warikomi' && this.game.printing ? T.printNotice : T.notice;
+        if (!hidden && this.cool <= 0 && this.sees(range, Math.PI * 2, 0)) this.notice();
         this.ring?.update(this.pos.x, this.pos.z, this.cool > 0 ? 0 : clamp(1 - (dist - T.notice) / 4, 0, 1) * 0.55);
         return 'idle';
       }
@@ -622,7 +629,10 @@ export class Enemy {
     const active = !hidden && this.cool <= 0 && dist < T.sense;
     let tz = this.home.z;
     let tx = this.home.x;
-    if (active) {
+    if (active && g.axis === 'x') {
+      tx = clamp(p.pos.x + p.vel.x * 0.2, g.min + 0.5, g.max + 0.5);
+      tz = this.home.z + clamp((p.pos.z - this.home.z) * 0.15, -0.6, 0.6);
+    } else if (active) {
       tz = clamp(p.pos.z + p.vel.y * 0.2, g.min + 0.5, g.max + 0.5);
       tx = this.home.x + clamp((p.pos.x - this.home.x) * 0.15, -0.6, 0.6);
     }

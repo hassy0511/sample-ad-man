@@ -291,8 +291,41 @@ export const CAST = {
       ['ねえ聞いて！充電器忘れた！', 'あとモバイルバッテリーも忘れた！', '（10分経過）…あ、このコンセント使えないやつだ'],
     ],
   },
-};
 
+  warikomi: {
+    code: 9,
+    name: '石井係長',
+    role: '総務部',
+    nick: '割り込み係長',
+    trait: 'コピー機のまわりをうろうろ。印刷中の人を見つけると遠くからでも寄ってきて「1枚だけ先いい？」。',
+    power: 3,
+    penalty: 10,
+    papers: 0,
+    stamp: '割り込み',
+    tint: '#8e6cc7',
+    voice: { freq: 240, type: 'triangle' },
+    look: {
+      skin: '#eebd98',
+      hair: { style: 'short', color: '#2b2522' },
+      top: { type: 'shirt', color: '#e6ecf5' },
+      shirt: '#e6ecf5',
+      tie: '#6b4fa0',
+      bottom: { type: 'pants', color: '#52586a' },
+      shoes: '#222222',
+      glasses: { color: '#333333', square: true },
+      brows: 'worried',
+      cheeks: false,
+      prop: { left: 'papers' },
+    },
+    notice: ['あ、それ終わったら1枚だけ！', 'ちょっと先に1枚だけいい？', 'コピー機空いてる？'],
+    giveup: ['…じゃあ後でいいや', '急ぎじゃないから（急ぎ）'],
+    after: ['ありがとね〜', '助かった！200枚だけだったから'],
+    talks: [
+      ['ごめん！1枚だけ先にいい？', '（ピー、ガシャン、ガシャン、ガシャン…）', '（10分経過）…ごめん、200枚だった。'],
+      ['あ、両面印刷ってどうやるんだっけ？', 'ついでにホチキスの設定も教えて！', '（10分経過）あ、トナー切れた。'],
+    ],
+  },
+};
 export const BOSS = {
   name: '大河原部長',
   role: '営業部長',
@@ -381,6 +414,24 @@ GOAL_NPC.jomu = {
   stamp: '常務印',
 };
 GOAL_NPC.boss.rallyLines = ['稟議か。どれどれ。', '課長のハンコ、ちょっと傾いてない？…まあいいか。', 'ポン。常務は午後いないから急いで。'];
+
+GOAL_NPC.judge = {
+  name: '鶴田社長',
+  role: '社内コンペ 審査員長',
+  nick: '審査員長',
+  tint: '#d4a82a',
+  voice: { freq: 100, type: 'sawtooth' },
+  look: CAST.shacho.look,
+  lines: ['来たか。では、始めたまえ。', '（プレゼン中……スライドが1枚、逆さまだった）', '……ふむ。面白い。採用だ！'],
+  stamp: '採用',
+};
+
+// コピー機
+export const COPIER = {
+  jammed: ['ピー……紙詰まりです', '「トレイ2を確認してください」', 'ガガッ……（紙を噛んでいる）', '「トナーが切れました」'],
+  start: 'よし、動いた！印刷開始…',
+  done: '印刷完了！会議室へ！',
+};
 
 // 順番を飛ばしたとき
 export const RALLY_REJECT = {

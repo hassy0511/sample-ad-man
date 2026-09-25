@@ -35,6 +35,14 @@ export const LIGHTING = {
     far: '#7a6aa0', mid: '#5b4f84', near: '#3e3764', windows: 0.35, windowColor: '#ffd98a',
     sunDisc: [1500, 470, 60, 'rgba(255,170,110,0.9)'], bloom: 0.42, tint: [1.06, 0.98, 0.95], sat: 1.12, vignette: 0.38, screenBoost: 1.6,
   },
+  afternoon: {
+    exposure: 1.02, hemiSky: '#f3eadb', hemiGround: '#c9ab88', hemi: 1.15,
+    sun: '#ffe2b0', sunI: 3.0, sunDir: [-0.5, 0.9, 0.55],
+    bgTop: '#93bfe3', bgBottom: '#f5ecdf', fog: '#efe6d9', env: 0.4,
+    cityTop: '#7fb4e2', cityMid: '#d8e4ee', cityBottom: '#f6eadb', cloud: 'rgba(255,250,240,0.9)',
+    far: '#bcc7d3', mid: '#a3b0c0', near: '#8997aa', windows: 0.04, windowColor: 'rgba(255,255,255,0.6)',
+    sunDisc: null, bloom: 0.14, tint: [1.04, 1.01, 0.97], sat: 1.1, vignette: 0.32, screenBoost: 1.15,
+  },
   night: {
     exposure: 1.15, hemiSky: '#4a5a9a', hemiGround: '#2a2438', hemi: 0.75,
     sun: '#a9bcff', sunI: 1.1, sunDir: [0.35, 1.0, -0.25],
@@ -602,6 +610,7 @@ export class World {
 
   copier(B, x, y) {
     const yaw = this.facing(x, y);
+    (this.copiers ||= []).push({ x: x + 0.5, z: y + 0.5, yaw, front: { x: x + 0.5 + Math.sin(yaw) * 1.05, z: y + 0.5 + Math.cos(yaw) * 1.05 } });
     B.at(x + 0.5, y + 0.5, yaw);
     B.rbox('matte', '#e7e7e2', 0, 0.4, 0, 0.86, 0.8, 0.68, 0.04);
     B.rbox('matte', '#cfd2d6', 0, 0.86, -0.02, 0.86, 0.12, 0.64, 0.03);

@@ -231,6 +231,26 @@ export class UI {
     if (on && portrait) $('hud-ally-img').src = portrait;
   }
 
+  setGoalLabel(text) {
+    $('gp-label').textContent = text;
+  }
+
+  /** 印刷の進み具合（entity の頭上に表示。null で消す） */
+  setProgress(entity, pct = 0, label = '') {
+    if (!this.progEl) {
+      this.progEl = document.createElement('div');
+      this.progEl.className = 'progress-tag';
+      this.progEl.innerHTML = '<span></span><i><b></b></i>';
+      this.layer.appendChild(this.progEl);
+    }
+    this.progTarget = entity;
+    this.progEl.hidden = !entity;
+    if (!entity) return;
+    this.progEl.querySelector('span').textContent = `${label} ${Math.floor(pct * 100)}%`;
+    this.progEl.querySelector('b').style.width = `${pct * 100}%`;
+    this.progEl.classList.toggle('paused', label !== '印刷中');
+  }
+
   setRally(rally, idx, label) {
     const el = $('hud-rally');
     el.innerHTML = rally.map((r, i) => `<span class="rs${i < idx ? ' on' : ''}${i === idx ? ' next' : ''}"><i>${i < idx ? '印' : ''}</i>${r.label}</span>`).join('');
@@ -331,11 +351,19 @@ export class UI {
   clearWorld() {
     for (const a of this.anchored) a.el.remove();
     this.anchored = [];
+    if (this.progEl) {
+      this.progEl.remove();
+      this.progEl = null;
+    }
   }
 
   update(dt, camera) {
     const W = innerWidth;
     const H = innerHeight;
+    if (this.progTarget && this.progEl) {
+      _v.set(this.progTarget.pos.x, 2.1, this.progTarget.pos.z).project(camera);
+      this.progEl.style.transform = `translate(${((_v.x + 1) / 2) * W}px, ${((1 - _v.y) / 2) * H}px) translate(-50%, -100%)`;
+    }
     for (const a of this.anchored) {
       if (a.dead) continue;
       a.t += dt;

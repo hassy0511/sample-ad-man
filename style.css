@@ -991,3 +991,26 @@ kbd {
 .bubble.ally { background: #e3f7fb; border-color: #1f8aa0; box-shadow: 0 3px 0 #1f8aa0; }
 .bubble.ally::after { border-color: #1f8aa0; }
 @media (max-width: 640px) { .hud-ally { font-size: 0; padding: 0 6px; } }
+
+/* --------------------------------------------------------------- 印刷の進み具合 */
+.progress-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+  padding: 6px 10px 8px;
+  background: #fff;
+  border: 2.5px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: 0 3px 0 var(--ink);
+  font-weight: 800;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.progress-tag i { display: block; height: 8px; border-radius: 999px; background: var(--paper-2); overflow: hidden; }
+.progress-tag b { display: block; height: 100%; width: 0; background: var(--wakaba); border-radius: inherit; }
+.progress-tag.paused { background: #fff4d6; }
+.progress-tag.paused b { background: #d9a520; }
