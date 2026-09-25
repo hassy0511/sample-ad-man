@@ -4,6 +4,7 @@ export class Input {
     this.keys = new Set();
     this.move = { x: 0, y: 0 };
     this.dashQueued = false;
+    this.dashRepeat = false; // 最後のダッシュ入力が押しっぱなしのキーリピートか（連打の判定に使う）
     this.phoneQueued = false;
     this.itemQueued = false;
     this.stick = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
@@ -15,6 +16,7 @@ export class Input {
       this.keys.add(e.code);
       if (e.code === 'Space' || e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyJ') {
         this.dashQueued = true;
+        this.dashRepeat = e.repeat;
         e.preventDefault();
       }
       if (e.code === 'KeyE' || e.code === 'KeyQ' || e.code === 'KeyK') this.phoneQueued = true;
@@ -72,6 +74,7 @@ export class Input {
     document.getElementById('btn-dash').addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.dashQueued = true;
+      this.dashRepeat = false;
     });
     document.getElementById('btn-phone').addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -123,6 +126,13 @@ export class Input {
     return d;
   }
 
+  /** 新しく押したダッシュだけ（押しっぱなしは数えない。連打でふりほどくとき用） */
+  takeDashPress() {
+    const d = this.dashQueued && !this.dashRepeat;
+    this.dashQueued = false;
+    return d;
+  }
+
   takeItem() {
     const v = this.itemQueued;
     this.itemQueued = false;
@@ -137,6 +147,7 @@ export class Input {
 
   reset() {
     this.dashQueued = false;
+    this.dashRepeat = false;
     this.phoneQueued = false;
     this.itemQueued = false;
     this.keys.clear();

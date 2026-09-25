@@ -439,6 +439,7 @@ kbd {
 .hud-clock.low .hud-bar i { background: var(--shu); }
 .hud-clock.low #hud-now { color: #ffb4a8; }
 .hud-clock.penalty { animation: shake 0.4s linear infinite; }
+.hud-clock.drag { background: var(--shu-deep); }
 
 .hud-right {
   position: absolute;
@@ -1032,6 +1033,12 @@ kbd {
 .bubble.cleaner { background: #e8f4fb; }
 .bubble.mimi { background: #f5ecfb; border-color: #7a3f93; box-shadow: 0 3px 0 #7a3f93; }
 .bubble.mimi::after { border-color: #7a3f93; }
+.bubble.aisatsu { background: #fff1e4; border-color: #b85a14; box-shadow: 0 3px 0 #b85a14; }
+.bubble.aisatsu::after { border-color: #b85a14; }
+.bubble.oosouji { background: #eaf6ee; border-color: #257046; box-shadow: 0 3px 0 #257046; }
+.bubble.oosouji::after { border-color: #257046; }
+.bubble.bureiko { background: #fff0ee; border-color: #a3231f; box-shadow: 0 3px 0 #a3231f; }
+.bubble.bureiko::after { border-color: #a3231f; }
 @media (max-width: 640px) { .hud-ally { font-size: 0; padding: 0 6px; } }
 
 /* --------------------------------------------------------------- 印刷の進み具合 */

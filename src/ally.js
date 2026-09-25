@@ -54,7 +54,7 @@ export class Ally {
     this.t = 0;
     this.char.faceDir(e.pos.x - this.pos.x, e.pos.z - this.pos.z);
     this.char.setMood('normal');
-    this.say(pick(Math.random, ALLY.intercept), 2.2);
+    this.say(pick(Math.random, this.game.stage.allyLines?.intercept || ALLY.intercept), 2.2);
     e.hold(7, this.pos);
     setTimeout(() => e.say(pick(Math.random, ALLY.reaction), '', 2), 700);
     this.game.fx.dust(this.pos.x, this.pos.z, 8, '#dff6fb', 1);

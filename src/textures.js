@@ -253,6 +253,7 @@ export const FLOOR_STYLES = {
   '_': { base: [196, 190, 180], kind: 'paver' },
   '=': { base: [74, 78, 88], kind: 'road' },
   'z': { base: [74, 78, 88], kind: 'cross' },
+  '%': { base: [196, 190, 142], kind: 'tatami' },
 };
 
 export function floorTexture(grid, floorType, aoTiles) {
@@ -330,6 +331,26 @@ export function floorTexture(grid, floorType, aoTiles) {
           g.fillStyle = 'rgba(60,35,15,0.35)';
           g.fillRect(px, py + k * plank, S, 1);
           if (rng() < 0.4) g.fillRect(px + Math.floor(rng() * S), py + k * plank, 1, plank);
+        }
+      } else if (st.kind === 'tatami') {
+        // 畳：い草の目は縦横交互。縁は目に沿った2辺に、2マスで1畳に見えるよう偶数マスの端にも線
+        g.fillStyle = `rgb(${r + j},${gg + j},${b + j * 0.6})`;
+        g.fillRect(px, py, S, S);
+        const vertical = ((x >> 1) + y) % 2 === 0;
+        g.fillStyle = 'rgba(96,86,40,0.16)';
+        for (let i = 1; i < S; i += 3) {
+          if (vertical) g.fillRect(px + i, py, 1, S);
+          else g.fillRect(px, py + i, S, 1);
+        }
+        g.fillStyle = 'rgba(47,58,42,0.8)';
+        if (vertical) {
+          g.fillRect(px, py, 2.5, S);
+          g.fillRect(px + S - 2.5, py, 2.5, S);
+          if (y % 2 === 0) g.fillRect(px, py, S, 1);
+        } else {
+          g.fillRect(px, py, S, 2.5);
+          g.fillRect(px, py + S - 2.5, S, 2.5);
+          if (x % 2 === 0) g.fillRect(px, py, 1, S);
         }
       } else {
         const half = S / 2;

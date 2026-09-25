@@ -34,9 +34,16 @@ export const ITEMS = {
     desc: '使うと、まわりの人にお土産を配る。受け取った人は10秒間話しかけてこない（音にも気づかない）。',
     color: '#e87fa5',
   },
+  karaoke: {
+    name: 'カラオケ割引券',
+    short: '割引券',
+    desc: '使うと足元に置く。8秒間、近く（9m）の宴会好き（二次会電車・飲み会幹事・接待好き）が券に群がって、誰も捕まえてこない。',
+    hint: '使うと、宴会好きが群がる！', // 拾ったあとに出る使い方のヒント
+    color: '#e84d8a',
+  },
 };
 
-export const ITEM_CODES = { E: 'energy', U: 'umbrella', O: 'omiyage', S: 'shoecover', F: 'baramaki' };
+export const ITEM_CODES = { E: 'energy', U: 'umbrella', O: 'omiyage', S: 'shoecover', F: 'baramaki', '@': 'karaoke' };
 export const BAG_SIZE = 2;
 
 /** 床に置くアイテムの見た目 */
@@ -78,6 +85,20 @@ export function itemMesh(id) {
       s.rotation.y = (i - 1) * 0.3;
       g.add(s);
     }
+  } else if (id === 'karaoke') {
+    // ピンクの割引券と小さなマイク
+    const ticket = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.03, 0.22), std('#e84d8a'));
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.032, 0.222), std('#ffffff'));
+    band.position.x = 0.1;
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.16, 8), std('#1b1d22'));
+    grip.rotation.z = Math.PI / 2 - 0.3;
+    grip.position.set(-0.04, 0.07, 0);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), std('#c9ccd1', { metalness: 0.6 }));
+    head.position.set(-0.12, 0.1, 0);
+    const tilt = new THREE.Group(); // 足元の輪は傾けない
+    tilt.add(ticket, band, grip, head);
+    tilt.rotation.x = 0.5;
+    g.add(tilt);
   } else {
     const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.18, 0.3), std('#f3ead8'));
     const wrap = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.19, 0.08), std('#c0392b'));

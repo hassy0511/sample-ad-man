@@ -191,16 +191,21 @@ export class UI {
     if (stage) {
       $('hud-label').textContent = `${stage.label}・${stage.period}`;
       $('hud-title').textContent = stage.title;
-      $('hud-deadline').textContent = fmtClock(stage.deadline);
+      this.setDeadline(stage.deadline);
       $('gp-label').textContent = stage.goalLabel;
       $('hud-rally').hidden = !stage.rally;
-      const a = ((stage.deadline % 60) / 60) * Math.PI * 2;
-      $('dial-deadline').setAttribute('cx', 32 + Math.sin(a) * 25);
-      $('dial-deadline').setAttribute('cy', 32 - Math.cos(a) * 25);
       $('dash-hint').classList.remove('fade');
       clearTimeout(this.hintTimer);
       this.hintTimer = setTimeout(() => $('dash-hint').classList.add('fade'), 7000);
     }
+  }
+
+  /** 締切の表示と時計の目盛り（年末進行で前倒しになったときも呼ぶ） */
+  setDeadline(min) {
+    $('hud-deadline').textContent = fmtClock(min);
+    const a = ((min % 60) / 60) * Math.PI * 2;
+    $('dial-deadline').setAttribute('cx', 32 + Math.sin(a) * 25);
+    $('dial-deadline').setAttribute('cy', 32 - Math.cos(a) * 25);
   }
 
   updateHud(clock, stage, papers, dashCd, penalty) {
@@ -211,6 +216,7 @@ export class UI {
     const clockEl = $('hud-clock');
     clockEl.classList.toggle('low', left <= 10);
     clockEl.classList.toggle('penalty', !!penalty);
+    clockEl.classList.toggle('drag', penalty === 'drag'); // 連行中は時計が赤い（スマホでも見えるように）
     const m = clock % 60;
     const h = (clock / 60) % 12;
     const setHand = (id, frac, len) => {
@@ -268,8 +274,8 @@ export class UI {
     if (text) el.textContent = text;
   }
 
-  /** 印刷の進み具合（entity の頭上に表示。null で消す） */
-  setProgress(entity, pct = 0, label = '') {
+  /** 印刷の進み具合（entity の頭上に表示。null で消す）。paused で黄色くなる */
+  setProgress(entity, pct = 0, label = '', paused = label !== '印刷中') {
     if (!this.progEl) {
       this.progEl = document.createElement('div');
       this.progEl.className = 'progress-tag';
@@ -281,7 +287,7 @@ export class UI {
     if (!entity) return;
     this.progEl.querySelector('span').textContent = `${label} ${Math.floor(pct * 100)}%`;
     this.progEl.querySelector('b').style.width = `${pct * 100}%`;
-    this.progEl.classList.toggle('paused', label !== '印刷中');
+    this.progEl.classList.toggle('paused', paused);
   }
 
   setRally(rally, idx, label) {

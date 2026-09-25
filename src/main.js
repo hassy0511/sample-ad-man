@@ -22,7 +22,10 @@ import { clamp, damp, lerp, smooth, pick, textTexture } from './util.js';
 
 const RANK_ORDER = ['C', 'B', 'A', 'S'];
 const PITCH = 0.93;
-const TEMPO = { 1: 108, 2: 116, 3: 124, 13: 112, 14: 120, 15: 128, 16: 120, 17: 128, 18: 108 };
+const TEMPO = { 1: 108, 2: 116, 3: 124, 13: 112, 14: 120, 15: 128, 16: 120, 17: 128, 18: 108, 19: 120, 20: 112, 21: 130 };
+// 行列に巻き込める人の動き方（社長・書類おじさん・清掃員・ティッシュ配りなどは巻き込めない）
+const ABSORB = new Set(['senpai', 'warikomi', 'doki', 'shinjin', 'kanji', 'mtg', 'keiri']);
+const _dashDir = new THREE.Vector2();
 
 class Game {
   constructor() {
@@ -49,6 +52,7 @@ class Game {
     this.state = 'loading';
     this.stageIndex = 0;
     this.enemies = [];
+    this.congas = [];
     this.cam = {
       target: new THREE.Vector3(10, 0, 10), goalTarget: new THREE.Vector3(),
       scale: 1, goalScale: 1, yaw: 0, goalYaw: 0, shake: 0, offset: new THREE.Vector3(),
@@ -169,7 +173,8 @@ class Game {
   // -------------------------------------------------------------------------
   loadStage(i, { demo = false } = {}) {
     this.clearStage();
-    const stage = STAGES[i];
+    // 年末進行で締切が変わるので、ステージはコピーを使う（STAGES は書き換えない）
+    const stage = { ...STAGES[i] };
     this.stageIndex = i;
     this.stage = stage;
     this.world = new World(stage, this.renderer);
@@ -192,6 +197,11 @@ class Game {
       const route = stage.patrols?.[s.code]?.[count[s.code]++];
       return new Enemy(this, s, route);
     });
+    // 行列（先頭は Enemy、列の本体は Conga）
+    this.congas = this.enemies.filter((e) => e.conga).map((e) => e.conga);
+    this.lure = null;
+    this.squeezed = false;
+    this.congaHinted = false;
 
     this.boss = null;
     if ((stage.goalType === 'boss' || stage.goalType === 'desk') && this.world.spawns.boss) {
@@ -369,6 +379,18 @@ class Game {
     this.suitcase = null;
     this.belts?.dispose();
     this.belts = null;
+    this.congas = [];
+    if (this.lureMesh) {
+      this.lureMesh.removeFromParent();
+      this.lureMesh.traverse((o) => {
+        if (o.isMesh) {
+          o.geometry.dispose();
+          o.material.dispose();
+        }
+      });
+      this.lureMesh = null;
+    }
+    this.lure = null;
     this.ui.banner(null);
     for (const r of this.rooms?.list || []) {
       r.sign.removeFromParent();
@@ -570,6 +592,7 @@ class Game {
       P.update(dt, this.input);
       this.boss?.update(dt);
     }
+    for (const L of this.congas) L.update(dt);
 
     this.world.update(dt, this.time, this.clock, P ? P.pos : null);
     if (this.world.playerLight && P) this.world.playerLight.position.set(P.pos.x, 2.6, P.pos.z + 0.4);
@@ -590,12 +613,36 @@ class Game {
     const P = this.player;
     const stage = this.stage;
     this.clock += dt * stage.rate;
-    // 傘で顔を隠している間は、敵の判定より先に「見えない」ことにする
-    this.playerHidden = P.umbrellaT > 0;
+    // 連行中は時計が速く進む
+    if (P.attached?.mode === 'drag') this.clock += dt * stage.rate * (P.attached.line.cfg.dragClock - 1);
+    // 傘で顔を隠している間・大掃除隊にまぎれている間は、敵の判定より先に「見えない」ことにする
+    this.playerHidden = P.umbrellaT > 0 || P.attached?.mode === 'ride';
     this.auraLevel = 0;
     this.updatePlayerField();
+    // 年末進行：締切が1回だけ前倒しになる
+    const sq = stage.squeeze;
+    if (sq && !this.squeezed && this.clock >= sq.at) {
+      this.squeezed = true;
+      stage.deadline = sq.to;
+      this.ui.setDeadline(sq.to);
+      this.ui.toast(sq.text, 'announce');
+      this.ui.flash('rgba(224,64,47,0.28)');
+      this.audio.alarm();
+      this.shake(0.2);
+    }
+    // 床に置いたカラオケ割引券
+    if (this.lure) {
+      this.lure.t -= dt;
+      this.lureMesh.rotation.y += dt * 2;
+      if (this.lure.t <= 0) {
+        this.lure = null;
+        this.lureMesh.visible = false;
+      }
+    }
 
     for (const e of this.enemies) e.update(dt);
+    // 敵の処理の中で会話が始まった（二次会電車がカラオケに着いた）
+    if (this.state !== 'play') return;
     P.frozen = false;
     P.update(dt, this.input);
     this.boss?.update(dt);
@@ -640,6 +687,11 @@ class Game {
           this.audio.sparkle();
           this.ui.float(P.pos.x, 2.3, P.pos.z, `${ITEMS[it.id].name}をカバンに入れた`, 'good');
           this.onItemsChanged();
+          // 使い方のヒントは、拾ったときの表示が消えてから出す
+          if (ITEMS[it.id].hint) {
+            this.tipQueue.push(ITEMS[it.id].hint);
+            if (this.tipQueue.length === 1) this.tipT = 1.3;
+          }
         } else if (it.noteT <= 0) {
           it.noteT = 3;
           this.ui.float(P.pos.x, 2.3, P.pos.z, 'カバンがいっぱい', 'info');
@@ -668,6 +720,7 @@ class Game {
         this.nearMiss(e);
       }
     }
+    if (this.updateCongas()) return;
 
     // シュレッダー
     for (let i = 0; i < this.world.shredders.length; i++) {
@@ -685,7 +738,8 @@ class Game {
     this.ui.aura(this.auraLevel * 0.9);
     const left = stage.deadline - this.clock;
     this.audio.setTension(left <= 10);
-    this.ui.updateHud(this.clock, stage, P.papers, P.dashCD / 0.95, false);
+    this.ui.updateHud(this.clock, stage, P.papers, P.dashCD / 0.95, P.attached?.mode === 'drag' && 'drag');
+    if (P.attached?.mode === 'drag') this.ui.setProgress(P, P.attached.presses / P.attached.line.cfg.presses, 'ダッシュ連打でふりほどけ！', false);
     this.phoneBtn ??= document.getElementById('btn-phone');
     this.phoneBtn.style.setProperty('--cd', P.phoneLeft > 0 ? (P.phoneCD / 4).toFixed(3) : '1');
     if (this.phoneLeftShown !== P.phoneLeft) {
@@ -754,9 +808,9 @@ class Game {
   separate() {
     const E = this.enemies;
     for (let i = 0; i < E.length; i++) {
-      if (E[i].state === 'lurk') continue;
+      if (E[i].state === 'lurk' || E[i].state === 'inline') continue;
       for (let j = i + 1; j < E.length; j++) {
-        if (E[j].state === 'lurk') continue;
+        if (E[j].state === 'lurk' || E[j].state === 'inline') continue;
         const a = E[i].pos;
         const b = E[j].pos;
         const dx = b.x - a.x;
@@ -937,35 +991,235 @@ class Game {
     this.cam.shake = Math.max(this.cam.shake, amount);
   }
 
-  // --- 会話 -----------------------------------------------------------------
-  startTalk(e, called = false) {
-    // エース新人が一度だけ身代わりになる
-    if (this.ally?.state === 'follow') {
-      const P = this.player;
-      this.ally.intercept(e);
-      P.invulnT = 2;
+  // --- 行列（第7章） -----------------------------------------------------------
+  /** 行列ごとの巻き込み・触れたとき・くぐったときの処理。会話が始まったら true */
+  updateCongas() {
+    const P = this.player;
+    for (const L of this.congas) {
+      const e = L.leader;
+      const K = L.cfg;
+      const T = e.tune;
+      // 追ってくる人が列にぶつかると、その人も並ぶ（幹事は宴会好きの先頭に近づいただけで）
+      if (e.state !== 'lured' && e.state !== 'held') {
+        for (const o of this.enemies) {
+          if (!ABSORB.has(o.kind) || o.inLine || o.state === 'lured' || o.state === 'held') continue;
+          const chasing = o.state === 'chase' || o.state === 'rush' || o.state === 'follow';
+          if ((chasing && L.nearest(o.pos.x, o.pos.z) < T.absorbR) ||
+              (o.kind === 'kanji' && e.cfg.party && o.cool <= 0 && Math.hypot(o.pos.x - e.pos.x, o.pos.z - e.pos.z) < T.absorbHeadR)) L.absorb(o);
+        }
+      }
+      if (P.attached) continue;
+      // ヒントは 7m 以内で出すので、それまでは遠くまで距離を測る
+      const d = L.nearest(P.pos.x, P.pos.z, this.congaHinted ? 2 : 7);
+      if (!this.congaHinted && d < 7 && this.stage.congaHint) {
+        this.congaHinted = true;
+        this.ui.toast(this.stage.congaHint, 'announce');
+      }
+      if (d > 1.2 || P.umbrellaT > 0) continue;
+      // ダッシュでくぐる（ダッシュ1回につき1回だけ数える）
+      if (P.dashing) {
+        if (K.touch !== 'ride' && e.congaCatching && d < 0.95 && L.missDash !== P.dashN) {
+          L.missDash = P.dashN;
+          this.nearMiss(e);
+        }
+        continue;
+      }
+      const phonePass = K.phone && P.phoneT > 0;
+      if (d < 0.7 && !P.invulnerable && e.congaCatching) {
+        if (K.touch === 'talk') {
+          if (!phonePass) {
+            this.startTalk(e);
+            return true;
+          }
+          // 電話中は会釈して通してくれる
+          if (L.phoneNoteT <= 0) {
+            L.phoneNoteT = 3;
+            L.memberSay(pick(Math.random, e.cfg.phoneLines));
+          }
+          if (L.phoneMark !== P.phoneLeft) {
+            L.phoneMark = P.phoneLeft;
+            this.dodges++;
+            this.record('dodged', e.type);
+            this.ui.float(P.pos.x, 2.3, P.pos.z, 'スルッ！（会釈）', 'good');
+          }
+          continue;
+        }
+        if (K.touch === 'ride') {
+          // 先頭の隊長に正面からぶつかったときだけ掃除を頼まれる
+          const wp = e.patrol[e.pi];
+          const fx = wp.x - e.pos.x;
+          const fz = wp.z - e.pos.z;
+          const px = P.pos.x - e.pos.x;
+          const pz = P.pos.z - e.pos.z;
+          if (L.hit === 0 && (fx * px + fz * pz) / ((Math.hypot(fx, fz) || 1) * (Math.hypot(px, pz) || 1)) > 0.3) {
+            this.startTalk(e);
+            return true;
+          }
+          if (L.rideCD <= 0) this.attach(L, 'ride');
+          continue;
+        }
+        // drag：エース新人 → 菓子折り → 連行 の順
+        if (this.tryAlly(e)) continue;
+        if (P.takeItem('omiyage')) {
+          e.say(e.cfg.omiyageLines[0], '', 1.8);
+          L.memberSay(e.cfg.omiyageLines[1]);
+          e.set('rest');
+          e.cool = 4;
+          P.invulnT = 1.5;
+          this.dodges++;
+          this.record('dodged', e.type);
+          this.ui.float(P.pos.x, 2.4, P.pos.z, '菓子折りでセーフ！', 'good');
+          this.onItemsChanged();
+          continue;
+        }
+        if (P.phoneT > 0) e.say(pick(Math.random, e.cfg.phoneLines), '', 1.6);
+        this.attach(L, 'drag');
+        continue;
+      }
+      // 列は壁のように押し返す（大掃除隊と、電話中に会釈してくれる列は通れる）
+      if (d < 0.62 && K.touch !== 'ride' && !phonePass) {
+        L.pushOut(P.pos, 0.62);
+        this.world.grid.resolveCircle(P.pos, P.r);
+      }
+    }
+    return false;
+  }
+
+  /** 行列の最後尾につながる（ride：まぎれこむ／drag：連行される） */
+  attach(L, mode) {
+    const P = this.player;
+    const e = L.leader;
+    P.attached = { line: L, mode, presses: 0, t: 0 };
+    P.vel.set(0, 0);
+    P.slipT = 0;
+    P.phoneT = 0;
+    if (mode === 'ride') {
+      this.ui.float(P.pos.x, 2.4, P.pos.z, '大掃除隊にまぎれこんだ！', 'good');
+      e.say(pick(Math.random, e.cfg.joinLines), '', 1.6);
+      this.audio.sparkle();
+    } else {
+      this.record('caught', e.type);
+      this.caught++;
+      e.set('haul');
+      e.say(pick(Math.random, e.cfg.dragLines), '', 1.6);
+      this.audio.caught();
+      this.shake(0.15);
+      this.ui.float(P.pos.x, 3.9, P.pos.z, '連行！ ダッシュ連打でふりほどけ！', 'minus'); // 連打のゲージより上に出す
+    }
+  }
+
+  /** つながっている間のダッシュ：ride は降りる、drag は連打でふりほどく */
+  onAttachedDash() {
+    const P = this.player;
+    const A = P.attached;
+    const L = A.line;
+    const e = L.leader;
+    const K = L.cfg;
+    if (A.mode === 'drag') {
+      if (A.t < K.lockT) return;
+      A.presses++;
+      P.char.play('stagger');
+      if (A.presses < K.presses) {
+        this.ui.float(P.pos.x, 3.9, P.pos.z, 'ジタバタ！', 'info');
+        return;
+      }
+    }
+    // 抜ける向きはスティックの向き。入力がなければ列の進行方向の右（壁なら左）
+    const mv = this.input.move;
+    if (Math.hypot(mv.x, mv.y) > 0.1) _dashDir.set(mv.x, mv.y);
+    else {
+      const l = Math.hypot(e.vel.x, e.vel.z) || 1;
+      _dashDir.set(-e.vel.z / l, e.vel.x / l);
+      if (_dashDir.lengthSq() < 0.01) _dashDir.set(1, 0);
+      if (!this.world.grid.isWalkWorld(P.pos.x + _dashDir.x * 1.2, P.pos.z + _dashDir.y * 1.2)) _dashDir.negate();
+    }
+    P.attached = null;
+    P.startDash(_dashDir);
+    if (A.mode === 'ride') {
+      P.invulnT = 0.6;
+      L.rideCD = e.tune.rideCD;
+      e.say(pick(Math.random, e.cfg.leaveLines), '', 1.4);
+    } else {
+      P.invulnT = 1.2;
+      e.set('rest');
+      e.say(pick(Math.random, e.cfg.escapeLines), '', 1.6);
       this.dodges++;
       this.record('dodged', e.type);
-      this.ui.float(P.pos.x, 2.4, P.pos.z, 'エース新人が身代わりに！', 'good');
-      this.fx.sparkle(P.pos.x, 1, P.pos.z, 14);
+      this.ui.float(P.pos.x, 2.6, P.pos.z, 'ふりほどいた！', 'good');
+      this.ui.setProgress(null);
+      this.fx.sparkle(P.pos.x, 1, P.pos.z, 12);
       this.audio.sparkle();
-      this.ui.setAlly(false);
-      if (this.suitcase?.carrier) {
-        this.suitcase.carrier = null;
-        this.ui.float(P.pos.x, 3.0, P.pos.z, 'ケースが戻ってきた', 'info');
-      }
+    }
+  }
+
+  /** 二次会電車が連行先（カラオケ個室）に着いた */
+  congaArrive(e) {
+    const P = this.player;
+    if (P.attached?.line !== e.conga) {
+      e.set('rest');
       return;
     }
-    this.record('caught', e.type);
+    P.attached = null;
+    this.ui.setProgress(null);
+    this.startTalk(e, false, { noRecord: true }); // 捕まった回数は連行のときに数えた
+  }
+
+  onAbsorb(e) {
+    this.dodges++;
+    this.record('dodged', e.type);
+    this.ui.float(e.pos.x, 2.6, e.pos.z, '列に巻き込んだ！', 'good');
+    this.ui.emote(e, '？');
+  }
+
+  /** カラオケ割引券を足元に置く（置けるのは1枚。2枚目は置き直し） */
+  dropLure(x, z) {
     const P = this.player;
+    this.lure = { x, z, t: 8 };
+    if (!this.lureMesh) {
+      this.lureMesh = itemMesh('karaoke');
+      this.scene.add(this.lureMesh);
+    }
+    this.lureMesh.position.set(x, 0.65, z);
+    this.lureMesh.visible = true;
+    this.fx.ring(x, z, ITEMS.karaoke.color, 3, 0.8);
+    this.ui.bubble(P, '（割引券をそっと置く）', 'player', 1.4);
+  }
+
+  // --- 会話 -----------------------------------------------------------------
+  /** エース新人が一度だけ身代わりになる。なったら true */
+  tryAlly(e) {
+    if (this.ally?.state !== 'follow') return false;
+    const P = this.player;
+    this.ally.intercept(e);
+    P.invulnT = 2;
+    this.dodges++;
+    this.record('dodged', e.type);
+    this.ui.float(P.pos.x, 2.4, P.pos.z, 'エース新人が身代わりに！', 'good');
+    this.fx.sparkle(P.pos.x, 1, P.pos.z, 14);
+    this.audio.sparkle();
+    this.ui.setAlly(false);
+    if (this.suitcase?.carrier) {
+      this.suitcase.carrier = null;
+      this.ui.float(P.pos.x, 3.0, P.pos.z, 'ケースが戻ってきた', 'info');
+    }
+    return true;
+  }
+
+  startTalk(e, called = false, opt = {}) {
+    if (!opt.skipAlly && this.tryAlly(e)) return;
+    const P = this.player;
+    if (!opt.noRecord) {
+      this.record('caught', e.type);
+      this.caught++;
+    }
+    P.attached = null;
     P.slipT = 0;
     this.state = 'talk';
-    this.caught++;
     P.frozen = true;
     P.vel.set(0, 0);
     e.vel.x = e.vel.z = 0;
-    // 向かい合って話せる距離まで離す
-    {
+    // 向かい合って話せる距離まで離す（行列の先頭は動かさない：瞬間移動すると跡が壁を貫く）
+    if (!e.conga) {
       const dx = e.pos.x - P.pos.x;
       const dz = e.pos.z - P.pos.z;
       const d = Math.hypot(dx, dz) || 1;
@@ -1005,12 +1259,19 @@ class Game {
     let lines = pick(Math.random, e.cfg.talks);
     let penalty = e.cfg.penalty;
     let stampSmall = `<br>${e.cfg.stamp}`;
+    // 人数ぶんの名刺交換（ご挨拶ご一行）
+    const n = e.conga ? e.conga.count() : 1;
+    if (e.cfg.conga?.perMember) {
+      penalty = e.cfg.penalty + e.cfg.conga.perMember * n;
+      stampSmall = `<br>${e.cfg.stamp}×${n}`;
+    }
     if (P.takeItem('omiyage')) {
       lines = [lines[0], '（菓子折りを差し出す）', 'お、気が利くね！…じゃあ手短に。'];
       penalty = Math.ceil(penalty / 2);
       stampSmall = '<br>菓子折り効果';
       this.onItemsChanged();
     }
+    lines = lines.map((l) => l.replace('{n}', n).replace('{m}', penalty));
     this.openTalk({
       who: e.cfg,
       portrait: this.ui.portraits[e.face || e.type],
@@ -1029,7 +1290,7 @@ class Game {
         if (e.cfg.papers) {
           P.addPapers(e.cfg.papers);
           this.fx.papers(P.pos.x, 1.6, P.pos.z, 8, 0.8);
-          this.ui.float(P.pos.x, 2.3, P.pos.z, `書類+${e.cfg.papers}`, 'minus');
+          this.ui.float(P.pos.x, 2.3, P.pos.z, `${e.cfg.papersLabel || '書類'}+${e.cfg.papers}`, 'minus');
         }
         this.input.reset();
         if (this.clock >= this.stage.deadline) this.fail();
@@ -1155,6 +1416,7 @@ class Game {
       for (const e of this.enemies) {
         e.pos.set(e.home.x, 0, e.home.z);
         if (e.patrol) e.pi = e.nearestWaypoint();
+        e.conga?.reset(); // 一番近い頂点を選ぶと列が逆走することがあるので、出現時の向きに戻す
       }
     }
   }
@@ -1484,6 +1746,8 @@ class Game {
     this.goalT = 0;
     this.arrive = this.clock;
     const P = this.player;
+    P.attached = null;
+    this.ui.setProgress(null);
     P.frozen = true;
     P.invulnT = 99;
     this.playerHidden = true;
@@ -1663,6 +1927,8 @@ class Game {
     this.arrive = this.stage.deadline;
     this.clock = this.stage.deadline;
     const P = this.player;
+    P.attached = null;
+    this.ui.setProgress(null);
     P.frozen = true;
     P.char.pose = 'shock';
     P.char.setMood('surprised');

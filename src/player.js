@@ -21,6 +21,7 @@ export const PHONE_TIME = 3.5;
 export const PHONE_COOLDOWN = 4;
 export const PHONE_USES = 2;
 export const BOOST_TIME = 6;
+const _slot = { x: 0, z: 0 };
 
 export class Player {
   constructor(game, item) {
@@ -51,6 +52,8 @@ export class Player {
     this.noiseT = 0;
     this.onWet = false;
     this.bowing = false;
+    this.attached = null; // 行列につながっている間 { line, mode: 'ride' | 'drag', presses, t }
+    this.dashN = 0; // ダッシュした回数（行列のスルッ！を1回だけ数える）
     this.facing = new THREE.Vector2(0, -1);
 
     this.stack = new THREE.Group();
@@ -131,6 +134,7 @@ export class Player {
     this.dashDir.copy(dir).normalize();
     this.dashT = DASH_TIME;
     this.dashCD = DASH_COOLDOWN;
+    this.dashN++;
     this.invulnT = Math.max(this.invulnT, 0.12);
     this.ghostT = 0;
     this.game.fx.dust(this.pos.x, this.pos.z, 8, '#f1f4f8', 1.2);
@@ -173,6 +177,8 @@ export class Player {
       this.game.ui.bubble(this, '（傘で顔を隠す）', 'player', 1.4);
     } else if (id === 'baramaki') {
       this.game.scatterGifts();
+    } else if (id === 'karaoke') {
+      this.game.dropLure(this.pos.x, this.pos.z);
     }
     this.game.audio.sparkle();
     this.game.onItemsChanged();
@@ -210,8 +216,8 @@ export class Player {
       this.phoneT = Math.max(0, this.phoneT - dt);
       this.boostT = Math.max(0, this.boostT - dt);
     }
-    if (!this.frozen && input.takeItem?.()) this.useItem();
-    if (!this.frozen && input.takePhone?.() && this.phoneCD <= 0 && this.phoneT <= 0) {
+    if (!this.frozen && !this.attached && input.takeItem?.()) this.useItem();
+    if (!this.frozen && !this.attached && input.takePhone?.() && this.phoneCD <= 0 && this.phoneT <= 0) {
       if (this.phoneLeft > 0) this.startPhone();
       else {
         this.phoneCD = 1.5;
@@ -231,6 +237,20 @@ export class Player {
     if (this.frozen) {
       this.vel.set(0, 0);
       c.speed = 0;
+    } else if (this.attached) {
+      // 行列の最後尾について歩く（ほかの敵・書類は受けない。電話とアイテムは使えない）
+      const A = this.attached;
+      A.t += dt;
+      this.invulnT = Math.max(this.invulnT, 0.1);
+      input.takePhone?.();
+      input.takeItem?.();
+      A.line.sample(A.line.members.length + 1, _slot);
+      const px = this.pos.x;
+      const pz = this.pos.z;
+      this.pos.x = damp(px, _slot.x, 12, dt);
+      this.pos.z = damp(pz, _slot.z, 12, dt);
+      if (dt > 0) this.vel.set((this.pos.x - px) / dt, (this.pos.z - pz) / dt);
+      if (input.takeDashPress()) this.game.onAttachedDash();
     } else if (this.slipT > 0) {
       // 転んで滑っていく
       this.slipT -= dt;
@@ -275,7 +295,7 @@ export class Player {
       }
     }
 
-    if (!this.frozen) {
+    if (!this.frozen && !this.attached) {
       this.pos.x += this.vel.x * dt;
       this.pos.z += this.vel.y * dt;
       // 動く歩道に運ばれる
@@ -288,7 +308,7 @@ export class Player {
     c.speed = this.dashT > 0 || this.slipT > 0 ? 0 : spd;
     if (spd > 0.3) c.faceDir(this.vel.x, this.vel.y);
     if (this.slipT > 0) c.pose = 'down';
-    else if (!this.frozen) c.pose = this.phoneT > 0 ? 'phone' : this.bowing && Math.hypot(this.vel.x, this.vel.y) < 0.9 ? 'bow' : 'idle';
+    else if (!this.frozen) c.pose = this.attached ? 'conga' : this.phoneT > 0 ? 'phone' : this.bowing && Math.hypot(this.vel.x, this.vel.y) < 0.9 ? 'bow' : 'idle';
     this.phoneMesh.visible = this.phoneT > 0;
     this.umbrella.visible = this.umbrellaT > 0;
     if (this.umbrella.visible) this.umbrella.rotation.y += dt * 1.5;

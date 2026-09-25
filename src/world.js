@@ -61,6 +61,16 @@ export const LIGHTING = {
     sunDisc: [520, 150, 34, 'rgba(200,215,255,0.35)'], bloom: 0.62, tint: [0.96, 0.98, 1.08], sat: 1.05, vignette: 0.5, screenBoost: 2.3,
     playerLight: true,
   },
+  // 居酒屋の座敷（暖色の明かり）
+  izakaya: {
+    exposure: 1.12, hemiSky: '#ffd9a8', hemiGround: '#6b4a32', hemi: 0.95,
+    sun: '#ffc68a', sunI: 1.7, sunDir: [0.3, 1.0, 0.35],
+    bgTop: '#070910', bgBottom: '#241a28', fog: '#1e1620', env: 0.2,
+    cityTop: '#05070f', cityMid: '#161a33', cityBottom: '#2a2340', cloud: 'rgba(90,100,150,0.18)',
+    far: '#151a33', mid: '#0f1328', near: '#0a0c1c', windows: 0.5, windowColor: '#ffb060',
+    sunDisc: null, bloom: 0.5, tint: [1.08, 0.99, 0.9], sat: 1.08, vignette: 0.46, screenBoost: 2.0,
+    playerLight: true,
+  },
 };
 
 const PAL = {
@@ -191,7 +201,7 @@ export class World {
     if (!this.spawns.goal) this.spawns.goal = { ...(this.spawns.rooms?.[0] || this.spawns.fetch || this.spawns.player) };
     // 床の種類（家具タイルは近くの床から推定）
     const ft = new Array(this.W * this.H).fill('.');
-    const isFloor = (c) => '.;,:_=z'.includes(c);
+    const isFloor = (c) => '.;,:_=z%'.includes(c);
     for (let y = 0; y < this.H; y++) {
       for (let x = 0; x < this.W; x++) {
         const c = grid.at(x, y);
@@ -322,10 +332,12 @@ export class World {
           case 'm':
           case 'B':
           case 'h':
+          case '$':
             if (!visited[y * this.W + x]) {
               const box = this.flood(x, y, c, visited);
               if (c === 'm') this.meetingTable(B, box);
               else if (c === 'B') this.bossDesk(B, box);
+              else if (c === '$') this.zataku(B, box);
               else this.whiteboard(B, box);
             }
             break;
@@ -924,6 +936,36 @@ export class World {
       }
     }
     B.cyl('matte', '#2d3139', 0, 0.68, 0, 0.12, 0.14, 0.03, 3);
+  }
+
+  /** 座敷の座卓：鍋・ジョッキ・枝豆、長い辺の外側に座布団 */
+  zataku(B, box) {
+    const w = box.maxX - box.minX;
+    const d = box.maxY - box.minY;
+    const cx = (box.minX + box.maxX) / 2;
+    const cz = (box.minY + box.maxY) / 2;
+    B.at(cx, cz);
+    const tw = w - 0.2;
+    const td = d > 1 ? d - 0.5 : 0.8;
+    B.box('gloss', '#6b4a2e', 0, 0.33, 0, tw, 0.06, td);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) B.box('matte', '#4a3220', sx * (tw / 2 - 0.1), 0.15, sz * (td / 2 - 0.1), 0.07, 0.3, 0.07);
+    // 鍋
+    B.cyl('matte', '#3a3a3a', 0, 0.42, 0, 0.2, 0.17, 0.12, 14);
+    B.cyl('metal', '#8a8f96', 0, 0.49, 0, 0.19, 0.19, 0.02, 14);
+    B.ball('metal', '#8a8f96', 0, 0.51, 0, 0.03, 0.03, 0.03, 8);
+    const n = Math.max(1, Math.round(w));
+    for (let i = 0; i < n; i++) {
+      const px = -w / 2 + i + 0.5;
+      const side = i % 2 ? 1 : -1;
+      // ジョッキ（上に白い泡）
+      B.cyl('gloss', '#f2c14e', px + 0.18, 0.44, side * (td / 2 - 0.16), 0.055, 0.05, 0.16, 10);
+      B.cyl('matte', '#fbf6ea', px + 0.18, 0.53, side * (td / 2 - 0.16), 0.057, 0.057, 0.03, 10);
+      // 枝豆
+      B.cyl('gloss', '#ffffff', px - 0.2, 0.37, -side * (td / 2 - 0.18), 0.1, 0.08, 0.02, 12);
+      for (let k = 0; k < 3; k++) B.ico('matte', '#6aa84f', px - 0.23 + k * 0.03, 0.39, -side * (td / 2 - 0.18) + (k - 1) * 0.02, 0.03, 0, 1.6, 0.6, 0.8);
+      // 座布団
+      for (const sz of [-1, 1]) B.box('matte', '#8a2f3a', px, 0.04, sz * (td / 2 + 0.45), 0.55, 0.08, 0.55);
+    }
   }
 
   bossDesk(B, box) {

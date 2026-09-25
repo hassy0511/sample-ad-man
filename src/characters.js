@@ -281,6 +281,11 @@ function addProp(b, name, side) {
       b.add(cyl(0.04, 0.04, 0.12, 12), '#d9dde2', M(hx, hy - 0.03, 0.06));
       b.add(cyl(0.041, 0.041, 0.04, 12), '#e0b030', M(hx, hy - 0.03, 0.06));
       break;
+    case 'tube':
+      // 丸めた来年のカレンダー（赤い帯つき）
+      b.add(cyl(0.05, 0.05, 0.5, 12), '#f7f4ec', M(hx, hy - 0.02, 0.06, 1.25, 0, 0));
+      b.add(cyl(0.052, 0.052, 0.07, 12), '#c0392b', M(hx, hy - 0.02, 0.06, 1.25, 0, 0));
+      break;
     case 'bag':
       b.add(rbox(0.09, 0.24, 0.34, 0.03), '#3b2a22', M(hx, hy - 0.16, 0));
       b.add(torus(0.05, 0.012, 6, 12, Math.PI), '#2a1d17', M(hx, hy - 0.03, 0, 0, Math.PI / 2, 0));
@@ -314,7 +319,7 @@ function buildLeg(look) {
 // Character
 // ---------------------------------------------------------------------------
 export class Character {
-  constructor(look, { outline = true, lite = false, shadow = true } = {}) {
+  constructor(look, { outline = true, lite = false, shadow = true, legs = false } = {}) {
     this.look = look;
     this.lite = lite;
     this.root = new THREE.Group();
@@ -346,7 +351,8 @@ export class Character {
     this.legL.position.set(0.1 * w, 0.36, 0);
     this.legR.position.set(-0.1 * w, 0.36, 0);
     this.body.add(this.legL, this.legR);
-    if (!lite) {
+    // 歩く背景の人（行列のメンバー）は lite でも脚を付ける
+    if (!lite || legs) {
       const legGeo = buildLeg(look);
       add(legGeo, this.legL);
       add(legGeo, this.legR);
@@ -521,7 +527,7 @@ export class Character {
 
     // 持ち物による腕の基本姿勢
     const carryL = { papers: -0.9, notebook: -0.75, clipboard: -0.7, list: -0.7, folder: 0.05, laptop: 0.05, bag: 0 }[this.propL];
-    const carryR = { mug: -0.55, redpen: -0.45, wallet: -0.3, penlight: -0.5, phone: -0.95, kasa: -0.15, mop: -0.45, can: -0.55 }[this.propR];
+    const carryR = { mug: -0.55, redpen: -0.45, wallet: -0.3, penlight: -0.5, phone: -0.95, kasa: -0.15, mop: -0.45, can: -0.55, tube: -0.4 }[this.propR];
     if (carryL !== undefined) {
       armL = carryL + armL * 0.25;
       if (this.propL === 'folder' || this.propL === 'laptop') armLz = 0.02;
@@ -598,6 +604,14 @@ export class Character {
       case 'bow':
         rigRotX = 0.5;
         armL = armR = 0.1;
+        break;
+      case 'conga':
+        // 前の人の肩に手を置いて歩く
+        armL = armR = -1.35;
+        armLz = 0.05;
+        armRz = -0.05;
+        bob += Math.abs(Math.sin(t * 6)) * 0.03;
+        headZ = Math.sin(t * 3) * 0.06;
         break;
       case 'look':
         headZ = Math.sin(t * 1.3) * 0.08;

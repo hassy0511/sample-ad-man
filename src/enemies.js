@@ -4,6 +4,7 @@ import { CAST } from './cast.js';
 import { VisionCone, RangeRing } from './effects.js';
 import { clamp, damp, pick, wrapAngle } from './util.js';
 import { NOISE } from './suitcase.js';
+import { Conga } from './conga.js';
 
 const TUNING = {
   senpai: { notice: 3.0, chase: 3.25, chaseMax: 4.2, lose: 8, cooldown: 9 },
@@ -20,6 +21,11 @@ const TUNING = {
   golf: { wander: 0.9, notice: 5.5, range: 2.0, fov: 2.2, windup: 0.8, every: 2.4, cooldown: 7 },
   cleaner: { speed: 1.25 },
   mimi: { ear: 2.0, walk: 3.0, search: 1.6, spot: 2.8, chase: 4.4, chaseMax: 1.8, lose: 7, cooldown: 8 },
+  // 行列（第7章）。速さや触れたときの動きは cfg.conga
+  conga: {
+    cooldown: 4, absorbR: 0.6, absorbHeadR: 0.8, absorbT: 14, absorbCool: 6, bowR: 1.6, bowT: 3.5, bowCD: 12,
+    yieldMax: 6, tangleR: 0.5, tangleT: 3.5, tangleCD: 8, rideCD: 1.2, lureR: 9,
+  },
 };
 
 // 濡れた床を走ると転ぶ速さ
@@ -97,7 +103,7 @@ export class Enemy {
       this.state = 'listen';
       this.goTo = { x: spawn.x, z: spawn.z };
     } else if (this.kind === 'keiri' || this.kind === 'mtg') {
-      this.cone = new VisionCone(game.scene, this.kind === 'keiri' ? '#ff4b3a' : '#ffd23f');
+      this.cone = new VisionCone(game.scene, this.cfg.cone || (this.kind === 'keiri' ? '#ff4b3a' : '#ffd23f'));
       this.state = this.patrol ? 'patrol' : 'stand';
       if (this.patrol) this.pi = this.nearestWaypoint();
       this.heardAt = { x: 0, z: 0 };
@@ -107,6 +113,11 @@ export class Enemy {
     } else if (this.kind === 'kanji' || this.kind === 'zandaka') {
       this.state = 'guard';
       this.guard = game.stage.guard || { axis: 'z', min: spawn.z - 3, max: spawn.z + 3 };
+    } else if (this.kind === 'conga') {
+      this.bowCD = 0;
+      this.tangleCD = 0;
+      this.conga = new Conga(game, this, this.cfg.conga, spawn.index);
+      this.conga.reset();
     } else {
       this.state = 'idle';
       this.throwT = 0.5 + Math.random();
@@ -148,7 +159,7 @@ export class Enemy {
   }
 
   say(text, style = '', dur = 1.6) {
-    this.game.ui.bubble(this, text, style || this.kind, dur);
+    this.game.ui.bubble(this, text, style || this.cfg.bubble || this.kind, dur);
   }
 
   distToPlayer() {
@@ -193,8 +204,8 @@ export class Enemy {
       }
     }
     const sp = Math.min(speed, d * 6);
-    // 濡れた床ではブレーキが効かない
-    const lam = this.kind !== 'cleaner' && this.game.weather?.isWet(this.pos.x, this.pos.z) ? 3 : 10;
+    // 濡れた床ではブレーキが効かない（清掃員と行列は別）
+    const lam = this.kind !== 'cleaner' && this.kind !== 'conga' && this.game.weather?.isWet(this.pos.x, this.pos.z) ? 3 : 10;
     this.vel.x = damp(this.vel.x, wantX * sp, lam, dt);
     this.vel.z = damp(this.vel.z, wantZ * sp, lam, dt);
     this.pos.x += this.vel.x * dt;
@@ -285,6 +296,7 @@ export class Enemy {
     this.holdWith = withPos;
     this.vel.x = this.vel.z = 0;
     this.wantsCatch = false;
+    this.char.spin = 0;
   }
 
   /** 濡れた床で転ぶ */
@@ -317,7 +329,8 @@ export class Enemy {
     this.char.setMood('happy');
     if (this.cfg.after) this.say(pick(Math.random, this.cfg.after), '', 1.8);
     this.char.pose = this.kind === 'kanji' ? 'dance' : 'idle';
-    if (TALKERS.has(this.kind) || this.kind === 'mimi') this.set('return');
+    if (this.kind === 'conga') this.set(this.cfg.conga.mode === 'route' ? 'walk' : 'rest');
+    else if (TALKERS.has(this.kind) || this.kind === 'mimi') this.set('return');
     else if (this.kind === 'keiri' || this.kind === 'mtg') this.set(this.patrol ? 'resume' : 'stand');
     else if (this.kind === 'kanji') this.set('guard');
     else if (this.kind === 'doki' || this.kind === 'golf') this.set('wander');
@@ -417,6 +430,12 @@ export class Enemy {
       this.rearm = Math.max(0, this.rearm - dt);
       return;
     }
+    // 行列に巻き込まれている間は、列が位置を決める
+    if (this.state === 'inline') {
+      this.inlineT -= dt;
+      this.idle(dt);
+      return;
+    }
     if (this.cool <= 0 && c.mood === 'happy' && this.kind !== 'kanji') c.setMood('normal');
     const hidden = this.game.playerHidden || this.onPhone;
     const dist = this.distToPlayer();
@@ -472,7 +491,10 @@ export class Enemy {
       return;
     }
 
-    switch (this.kind) {
+    // カラオケ割引券に群がっている間は、ふだんの動きをしない
+    const lp = this.lureStep(dt);
+    if (lp) pose = lp;
+    else switch (this.kind) {
       case 'golf':
         pose = this.updateGolf(dt, dist, hidden);
         break;
@@ -508,6 +530,9 @@ export class Enemy {
         break;
       case 'mimi':
         pose = this.updateMimi(dt, dist, hidden);
+        break;
+      case 'conga':
+        pose = this.updateConga(dt, dist, hidden);
         break;
       default:
         break;
@@ -1083,22 +1108,194 @@ export class Enemy {
     }
   }
 
+  // --- カラオケ割引券 ---------------------------------------------------------
+  /** 宴会好き（cfg.party）は券に群がる。群がっている間のポーズを返す（関係なければ null） */
+  lureStep(dt) {
+    const L = this.game.lure;
+    const s = this.state;
+    if (!this.cfg.party || s === 'held' || s === 'inline' || s === 'haul') return null;
+    if (s === 'lured') {
+      if (!L) {
+        this.set(this.kind === 'conga' ? 'hunt' : 'guard');
+        return null;
+      }
+      // 券のまわり 0.8m の、人ごとに決まった角度の位置へ
+      const a = this.home.x * 1.7 + this.home.z * 2.9;
+      const d = this.moveTo(L.x + Math.sin(a) * 0.8, L.z + Math.cos(a) * 0.8, 3.4, dt);
+      this.char.setMood('happy');
+      if (d > 0.3) return 'reach';
+      this.char.faceDir(L.x - this.pos.x, L.z - this.pos.z);
+      return 'dance';
+    }
+    if (!L || Math.hypot(this.pos.x - L.x, this.pos.z - L.z) > TUNING.conga.lureR) return null;
+    this.set('lured');
+    this.char.spin = 0;
+    this.ring?.update(this.pos.x, this.pos.z, 0);
+    this.say(pick(Math.random, this.cfg.lureLines || ['カラオケ！？']), '', 1.4);
+    this.game.ui.emote(this, '♪');
+    return 'reach';
+  }
+
+  // --- 行列（ご挨拶ご一行・大掃除隊・二次会電車） --------------------------------
+  /** 捕まえられる状態か（汎用の canCatch は使わない） */
+  get congaCatching() {
+    if (this.cool > 0) return false;
+    const s = this.state;
+    return this.cfg.conga.mode === 'route' ? s === 'walk' || s === 'bow' || s === 'yield' : s === 'hunt' || s === 'tangle';
+  }
+
+  /** 進む先 0.9m に、ほかの列の体があるか */
+  blockedBy(r = 0.7) {
+    const wp = this.patrol[this.pi];
+    const dx = wp.x - this.pos.x;
+    const dz = wp.z - this.pos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const x = this.pos.x + (dx / d) * 0.9;
+    const z = this.pos.z + (dz / d) * 0.9;
+    for (const L of this.game.congas) if (L !== this.conga && L.nearest(x, z) < r) return true;
+    return false;
+  }
+
+  startBow(other) {
+    this.set('bow');
+    this.bowWith = other;
+    this.char.setMood('happy');
+  }
+
+  /** 列のおしゃべり（先頭の notice か、メンバーの memberLines） */
+  chatter(dt, dist) {
+    this.lineT -= dt;
+    if (dist > 9 || this.lineT > 0) return;
+    this.lineT = 3.5 + Math.random() * 1.5;
+    if (Math.random() < 0.5 || !this.cfg.memberLines) this.say(pick(Math.random, this.cfg.notice), '', 1.5);
+    else this.conga.memberSay(pick(Math.random, this.cfg.memberLines));
+  }
+
+  updateConga(dt, dist, hidden) {
+    const T = this.tune;
+    const K = this.cfg.conga;
+    const c = this.char;
+    const P = this.player;
+    this.bowCD = Math.max(0, this.bowCD - dt);
+    this.tangleCD = Math.max(0, this.tangleCD - dt);
+    this.graceT = Math.max(0, (this.graceT || 0) - dt);
+    c.headYaw = 0;
+    if (this.state !== 'tangle') c.spin = 0;
+    switch (this.state) {
+      case 'walk': {
+        const wp = this.patrol[this.pi];
+        if (this.moveTo(wp.x, wp.z, K.speed, dt) < 0.2) this.pi = (this.pi + 1) % this.patrol.length;
+        this.chatter(dt, dist);
+        // ご一行どうしが出会うとお辞儀合戦
+        if (K.bow && this.bowCD <= 0) {
+          for (const L of this.game.congas) {
+            const o = L.leader;
+            if (o === this || !L.cfg.bow || o.bowCD > 0 || (o.state !== 'walk' && o.state !== 'yield')) continue;
+            if (Math.hypot(o.pos.x - this.pos.x, o.pos.z - this.pos.z) > T.bowR) continue;
+            this.startBow(o);
+            o.startBow(this);
+            this.game.ui.float((this.pos.x + o.pos.x) / 2, 3.9, (this.pos.z + o.pos.z) / 2, 'お辞儀合戦！', 'info');
+            return 'bow';
+          }
+        }
+        if (this.graceT <= 0 && this.blockedBy()) this.set('yield');
+        return 'idle';
+      }
+      case 'yield':
+        // ほかの列が通り過ぎるのを待つ（待ちきれなければ、しばらく譲らずに進む）
+        this.stop(dt);
+        if ((this.t > 0.3 && !this.blockedBy()) || this.t > T.yieldMax) {
+          if (this.t > T.yieldMax) this.graceT = 2;
+          this.set('walk');
+        }
+        return 'idle';
+      case 'bow': {
+        const o = this.bowWith;
+        this.stop(dt);
+        c.faceDir(o.pos.x - this.pos.x, o.pos.z - this.pos.z);
+        const k = Math.floor(this.t / 0.85);
+        if (k !== this.bowK) {
+          this.bowK = k;
+          if ((k % 2 === 0) === (this.conga.index < o.conga.index)) this.say(this.cfg.meetLines[k % this.cfg.meetLines.length], '', 0.9);
+        }
+        if (this.t > T.bowT) {
+          this.bowCD = T.bowCD;
+          this.bowK = -1;
+          this.set(this.conga.index < o.conga.index ? 'walk' : 'yield');
+        }
+        return Math.floor(this.t * 2.2) % 2 ? 'bow' : 'idle';
+      }
+      case 'start':
+        this.stop(dt);
+        if (this.t > 0.5) {
+          this.say(this.cfg.notice[0], '', 1.6);
+          this.game.ui.emote(this, '！');
+          this.game.audio.notice(this.cfg.voice.freq);
+          c.setMood('happy');
+          this.set('hunt');
+        }
+        return 'cheer';
+      case 'hunt':
+        this.moveTo(P.pos.x, P.pos.z, Math.max(K.minSpeed, K.speed - K.slowPerMember * this.conga.members.length), dt, this.game.playerField);
+        this.chatter(dt, dist);
+        if (hidden) {
+          this.say(pick(Math.random, this.cfg.millLines), '', 1.5);
+          this.set('mill');
+        } else if (K.tangle && this.tangleCD <= 0 && this.conga.selfHit(T.tangleR)) {
+          this.say(pick(Math.random, this.cfg.tangleLines), '', 1.5);
+          this.game.ui.emote(this, '？');
+          this.set('tangle');
+        }
+        return 'reach';
+      case 'mill':
+        // 見失って、その場で見回す
+        this.stop(dt);
+        c.headYaw = Math.sin(this.t * 3) * 0.9;
+        if (!hidden && this.t > 1) this.set('hunt');
+        return 'look';
+      case 'haul': {
+        // 最後尾に組み込んだまま、カラオケ個室へ
+        const [hx, hz] = this.game.stage.congaDest;
+        this.haulField ??= this.game.world.grid.field(hx, hz);
+        const d = this.moveTo(hx + 0.5, hz + 0.5, K.haulSpeed, dt, this.haulField);
+        if (d < 0.8) this.game.congaArrive(this);
+        return 'cheer';
+      }
+      case 'tangle':
+        this.stop(dt);
+        c.spin += dt * 9;
+        if (this.t > T.tangleT) {
+          c.spin = 0;
+          this.tangleCD = T.tangleCD;
+          this.set('hunt');
+        }
+        return 'shock';
+      case 'rest':
+        this.stop(dt);
+        if (this.t > K.rest && this.cool <= 0) this.set('hunt');
+        return 'idle';
+      default:
+        return 'idle';
+    }
+  }
+
   /** タイトル画面の背景用：巡回だけする */
   demoUpdate(dt) {
     const c = this.char;
     if (this.state === 'lurk') return;
-    if (this.patrol && (this.kind === 'keiri' || this.kind === 'mtg' || this.kind === 'shacho')) {
+    if (this.patrol && (this.kind === 'keiri' || this.kind === 'mtg' || this.kind === 'shacho' || this.kind === 'conga')) {
+      // 行列はルートを歩くだけ（お辞儀も譲り合いもしない）
       const wp = this.patrol[this.pi];
-      const d = this.moveTo(wp.x, wp.z, this.tune.patrol, dt);
+      const d = this.moveTo(wp.x, wp.z, this.conga ? this.cfg.conga.speed : this.tune.patrol, dt);
       if (d < 0.2) this.pi = (this.pi + 1) % this.patrol.length;
-      c.headYaw = Math.sin(c.t * 1.3) * 0.55;
+      c.headYaw = this.conga ? 0 : Math.sin(c.t * 1.3) * 0.55;
     } else {
       this.stop(dt);
       c.headYaw = Math.sin(c.t * 0.6 + this.home.x) * 0.5;
     }
     if (this.cone) this.cone.visible = false;
     this.ring?.update(this.pos.x, this.pos.z, 0);
-    c.pose = this.kind === 'kanji' ? 'dance' : this.kind === 'mimi' ? 'scroll' : 'idle';
+    c.pose = this.kind === 'kanji' ? 'dance' : this.kind === 'mimi' ? 'scroll' : this.conga && !this.patrol ? 'cheer' : 'idle';
     this.idle(dt);
   }
 
@@ -1247,5 +1444,6 @@ export class Enemy {
     for (const m of this.char.meshes) m.geometry.dispose();
     this.cone?.dispose();
     this.ring?.dispose();
+    this.conga?.dispose();
   }
 }
