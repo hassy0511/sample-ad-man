@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CAST, ALLY } from './cast.js';
+import { ITEMS, BAG_SIZE } from './items.js';
 import { fmtClock } from './util.js';
 
 const $ = (id) => document.getElementById(id);
@@ -229,6 +230,24 @@ export class UI {
     const el = $('hud-ally');
     el.hidden = !on;
     if (on && portrait) $('hud-ally-img').src = portrait;
+  }
+
+  /** カバンの中身（show=false でアイテムのないステージでは隠す） */
+  setItems(items, show) {
+    const chip = $('hud-items');
+    chip.hidden = !show;
+    document.querySelector('.hint-item').hidden = !show;
+    $('btn-item').hidden = !(show && this.game.input.touch);
+    if (!show) return;
+    const slots = [];
+    for (let i = 0; i < BAG_SIZE; i++) {
+      const id = items[i];
+      slots.push(id ? `<span class="slot" style="--c:${ITEMS[id].color}">${ITEMS[id].short}</span>` : '<span class="slot empty">空</span>');
+    }
+    chip.innerHTML = slots.join('');
+    const usable = items.find((k) => !ITEMS[k].passive);
+    $('btn-item-name').textContent = usable ? ITEMS[usable].short : items.length ? '菓子折り' : '空';
+    $('btn-item').classList.toggle('ready', !!usable);
   }
 
   setGoalLabel(text) {

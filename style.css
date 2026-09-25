@@ -1014,3 +1014,39 @@ kbd {
 .progress-tag b { display: block; height: 100%; width: 0; background: var(--wakaba); border-radius: inherit; }
 .progress-tag.paused { background: #fff4d6; }
 .progress-tag.paused b { background: #d9a520; }
+
+/* --------------------------------------------------------------- アイテム */
+.hud-items { gap: 4px; padding: 0 6px; font-family: var(--ui); }
+.hud-items .slot {
+  display: grid;
+  place-items: center;
+  min-width: 54px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 2px solid var(--ink);
+  background: color-mix(in srgb, var(--c) 22%, #fff);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.hud-items .slot.empty { border-style: dashed; color: var(--ink-soft); background: transparent; }
+#btn-item {
+  position: absolute;
+  right: calc(max(22px, env(safe-area-inset-right)) + 180px);
+  bottom: max(28px, env(safe-area-inset-bottom));
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 0.8rem;
+  box-shadow: 0 4px 0 var(--ink);
+  pointer-events: auto;
+  touch-action: none;
+}
+#btn-item span { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+#btn-item b { font-size: 0.62rem; color: var(--ink-2); }
+#btn-item.ready { background: var(--fusen); }
+@media (max-width: 640px) { .hud-items .slot { min-width: 40px; font-size: 0.62rem; } }

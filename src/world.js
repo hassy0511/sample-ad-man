@@ -4,6 +4,7 @@ import { GeoBatch, M, mulM, mulberry32, pick, textTexture, disposeTree, clamp } 
 import { Grid } from './nav.js';
 import { Character, SHARED } from './characters.js';
 import { ENEMY_CODES } from './levels.js';
+import { ITEM_CODES } from './items.js';
 import { WORKER_HAIR, HAIR_COLORS, SKINS, WORKER_TOPS } from './cast.js';
 import {
   screenAtlas, SCREEN_CELLS, floorTexture, cityTexture, gradientBackground, vendingTexture,
@@ -160,15 +161,16 @@ export class World {
         else if (c === 'G') this.spawns.goal = { x: x + 0.5, z: y + 0.5 };
         else if (c === 'C') this.spawns.pickups.push({ x: x + 0.5, z: y + 0.5 });
         else if (c === 'A') this.spawns.ally = { x: x + 0.5, z: y + 0.5 };
+        else if (ITEM_CODES[c]) (this.spawns.items ||= []).push({ id: ITEM_CODES[c], x: x + 0.5, z: y + 0.5 });
         else if (ENEMY_CODES[c]) {
           order[c] = order[c] || 0;
-          this.spawns.enemies.push({ code: Number(c), type: ENEMY_CODES[c], x: x + 0.5, z: y + 0.5, index: order[c]++ });
+          this.spawns.enemies.push({ code: c, type: ENEMY_CODES[c], x: x + 0.5, z: y + 0.5, index: order[c]++ });
         }
       }
     }
     // 床の種類（家具タイルは近くの床から推定）
     const ft = new Array(this.W * this.H).fill('.');
-    const isFloor = (c) => c === '.' || c === ';' || c === ',' || c === ':';
+    const isFloor = (c) => '.;,:_=z'.includes(c);
     for (let y = 0; y < this.H; y++) {
       for (let x = 0; x < this.W; x++) {
         const c = grid.at(x, y);
@@ -258,6 +260,12 @@ export class World {
             break;
           case 'p':
             this.plant(B, cx, cz);
+            break;
+          case 't':
+            this.tree(B, cx, cz);
+            break;
+          case 'n':
+            this.bench(B, x, y);
             break;
           case 'c':
             this.copier(B, x, y);
@@ -358,6 +366,10 @@ export class World {
   wall(B, x, y) {
     const cx = x + 0.5;
     const cz = y + 0.5;
+    if (this.stage.outdoor && y < this.H - 1) {
+      this.building(B, x, y);
+      return;
+    }
     const outer = x === 0 || y === 0 || x === this.W - 1 || y === this.H - 1;
     B.at(cx, cz);
     if (y === 0 && x > 0 && x < this.W - 1) {
@@ -378,6 +390,54 @@ export class World {
     B.box('matte', PAL.wall, 0, 0.5, 0, 1, 1.0, 1);
     B.box('matte', PAL.wallCap, 0, 1.015, 0, 1.0, 0.03, 1.0);
     B.box('matte', PAL.base, 0, 0.045, 0, 1.03, 0.09, 1.03);
+  }
+
+  /** 屋外：ビル（外周は高く、内側は低層で屋上が見える） */
+  building(B, x, y) {
+    const edge = x === 0 || y === 0 || x === this.W - 1;
+    const hash = ((x * 73856093) ^ (y * 19349663)) >>> 0;
+    const block = ((Math.floor(x / 5) * 31 + Math.floor(y / 4) * 17) >>> 0) % 4;
+    const colors = ['#d9d2c4', '#c7ccd4', '#b98a6e', '#e6e1d8'];
+    const col = colors[block];
+    const h = edge ? 3.2 + (hash % 5) * 0.25 : 1.35;
+    B.at(x + 0.5, y + 0.5);
+    B.box('matte', col, 0, h / 2, 0, 1, h, 1);
+    const roofs = ['#bdb4a4', '#a7aeb8', '#a07a64', '#cbc4b8'];
+    B.box('matte', edge ? '#8a919c' : roofs[block], 0, h + 0.03, 0, 1, 0.06, 1);
+    if (!edge) {
+      // 屋上のふち
+      if (!this.grid.at(x, y - 1).match(/#/)) B.box('matte', '#8a919c', 0, h + 0.12, -0.46, 1, 0.14, 0.08);
+      if (!this.grid.at(x, y + 1).match(/#/)) B.box('matte', '#8a919c', 0, h + 0.12, 0.46, 1, 0.14, 0.08);
+      if (!this.grid.at(x - 1, y).match(/#/)) B.box('matte', '#8a919c', -0.46, h + 0.12, 0, 0.08, 0.14, 1);
+      if (!this.grid.at(x + 1, y).match(/#/)) B.box('matte', '#8a919c', 0.46, h + 0.12, 0, 0.08, 0.14, 1);
+    }
+    // 窓
+    for (let wy = 0.55; wy < h - 0.3; wy += 0.75) {
+      if (this.grid.isWalk(x, y + 1) || y === 0) B.box('gloss', '#3d5570', 0, wy + 0.2, 0.505, 0.62, 0.38, 0.02);
+      if (this.grid.isWalk(x + 1, y)) B.box('gloss', '#3d5570', 0.505, wy + 0.2, 0, 0.02, 0.38, 0.62);
+      if (this.grid.isWalk(x - 1, y)) B.box('gloss', '#3d5570', -0.505, wy + 0.2, 0, 0.02, 0.38, 0.62);
+    }
+    if (!edge && hash % 7 === 0) B.box('matte', '#aab2bd', 0.15, h + 0.2, -0.1, 0.35, 0.3, 0.3);
+    if (!edge && hash % 11 === 0) B.cyl('matte', '#9aa1ab', -0.2, h + 0.25, 0.15, 0.12, 0.12, 0.4, 10);
+  }
+
+  tree(B, cx, cz) {
+    const { rng } = this;
+    B.at(cx, cz);
+    B.box('matte', '#5a5f68', 0, 0.02, 0, 0.9, 0.04, 0.9);
+    B.cyl('matte', '#6b4a33', 0, 0.8, 0, 0.08, 0.12, 1.6, 7);
+    for (let i = 0; i < 4; i++) {
+      B.ico('matte', pick(rng, LEAF), (rng() - 0.5) * 0.4, 1.7 + i * 0.18, (rng() - 0.5) * 0.4, 0.34 + rng() * 0.12, 0);
+    }
+  }
+
+  bench(B, x, y) {
+    const g = this.grid;
+    const alongX = g.isWalk(x, y - 1) || g.isWalk(x, y + 1);
+    B.at(x + 0.5, y + 0.5, alongX ? 0 : Math.PI / 2);
+    B.box('gloss', '#a0673f', 0, 0.42, 0, 0.9, 0.05, 0.38);
+    B.box('gloss', '#a0673f', 0, 0.68, -0.17, 0.9, 0.22, 0.04);
+    for (const sx of [-0.38, 0.38]) B.box('metal', '#4a4f58', sx, 0.21, 0, 0.05, 0.42, 0.34);
   }
 
   windowWall(B, x) {

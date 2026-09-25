@@ -5,6 +5,7 @@ export class Input {
     this.move = { x: 0, y: 0 };
     this.dashQueued = false;
     this.phoneQueued = false;
+    this.itemQueued = false;
     this.stick = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
     this.listeners = { confirm: [], pause: [] };
     this.touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -17,6 +18,7 @@ export class Input {
         e.preventDefault();
       }
       if (e.code === 'KeyE' || e.code === 'KeyQ' || e.code === 'KeyK') this.phoneQueued = true;
+      if (e.code === 'KeyR' || e.code === 'KeyF' || e.code === 'KeyL') this.itemQueued = true;
       if (e.code === 'Enter' || e.code === 'Space') this.emit('confirm', e);
       if (e.code === 'Escape' || e.code === 'KeyP') this.emit('pause', e);
       if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -75,6 +77,10 @@ export class Input {
       e.preventDefault();
       this.phoneQueued = true;
     });
+    document.getElementById('btn-item').addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.itemQueued = true;
+    });
   }
 
   on(name, fn) {
@@ -117,6 +123,12 @@ export class Input {
     return d;
   }
 
+  takeItem() {
+    const v = this.itemQueued;
+    this.itemQueued = false;
+    return v;
+  }
+
   takePhone() {
     const p = this.phoneQueued;
     this.phoneQueued = false;
@@ -126,6 +138,7 @@ export class Input {
   reset() {
     this.dashQueued = false;
     this.phoneQueued = false;
+    this.itemQueued = false;
     this.keys.clear();
   }
 }

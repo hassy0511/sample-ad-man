@@ -60,18 +60,20 @@
         <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="3" width="11" height="14" rx="1.5"/><path d="M7 7h5M7 10h5M7 13h3"/></svg>
         <b id="hud-papers-n">0</b>
       </div>
+      <div class="hud-chip hud-items" id="hud-items" hidden title="カバン（R で使う）"></div>
       <div class="hud-chip hud-ally" id="hud-ally" hidden title="エース新人が同行中（一度だけ身代わり）"><img id="hud-ally-img" alt="">身代わり</div>
       <button id="btn-sound" class="icon-btn" aria-label="サウンド切り替え"><span class="snd-on">♪</span><span class="snd-off">×</span></button>
       <button id="btn-pause" class="icon-btn" aria-label="一時停止">Ⅱ</button>
     </div>
     <div id="hud-rally" class="hud-rally" hidden aria-label="集めたハンコ"></div>
     <div id="goal-pointer" aria-hidden="true"><span class="gp-arrow">➤</span><em id="gp-label">部長席</em></div>
-    <div id="dash-hint"><kbd>SPACE</kbd> ダッシュでスルッと回避<span class="hint-phone">　<kbd>E</kbd> 電話中のふり（残り<span id="hint-phone-n">2</span>回）</span></div>
+    <div id="dash-hint"><kbd>SPACE</kbd> ダッシュでスルッと回避<span class="hint-phone">　<kbd>E</kbd> 電話中のふり（残り<span id="hint-phone-n">2</span>回）</span><span class="hint-item" hidden>　<kbd>R</kbd> アイテム</span></div>
   </div>
 
   <!-- タッチ操作 -->
   <div id="touch-ui" hidden>
     <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div><span class="stick-hint">ここで移動</span></div>
+    <button id="btn-item" aria-label="アイテムを使う" hidden><span>アイテム<b id="btn-item-name">空</b></span></button>
     <button id="btn-phone" aria-label="電話中のふり"><span>電話<b>残り2</b></span></button>
     <button id="btn-dash" aria-label="ダッシュ"><span>ダッシュ</span></button>
   </div>

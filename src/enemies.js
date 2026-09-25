@@ -12,6 +12,8 @@ const TUNING = {
   shinjin: { notice: 3.4, follow: 11, shoutEvery: 2.6, shoutR: 7.5, cooldown: 10 },
   kanji: { speed: 3.5, sense: 10, cooldown: 3.5 },
   shacho: { fov: 1.9, range: 7.2, patrol: 1.15, still: 0.9, cooldown: 12 },
+  handout: { reach: 1.4, cooldown: 5 },
+  zandaka: { speed: 3.0, sense: 99, cooldown: 3 },
   warikomi: { notice: 2.6, printNotice: 9, chase: 3.7, chaseMax: 5, lose: 10, cooldown: 9 },
   doki: { notice: 4.6, fov: 2.4, wander: 1.4, rush: 5.3, rushMax: 1.9, lose: 9, cooldown: 7 },
 };
@@ -28,7 +30,9 @@ export class Enemy {
     this.game = game;
     this.type = spawn.type;
     this.cfg = CAST[this.type];
-    this.tune = TUNING[this.type];
+    // 見た目・セリフは type、動き方は kind（別キャラが既存の動きを使い回せる）
+    this.kind = this.cfg.behavior || this.type;
+    this.tune = { ...TUNING[this.kind], ...(this.cfg.tune || {}) };
     this.char = new Character(this.cfg.look, { outline: true });
     this.pos = new THREE.Vector3(spawn.x, 0, spawn.z);
     this.home = { x: spawn.x, z: spawn.z };
@@ -60,21 +64,21 @@ export class Enemy {
     this.homeYaw = best;
     this.char.setYaw(best);
 
-    if (this.type === 'shacho') {
+    if (this.kind === 'shacho') {
       this.cone = new VisionCone(game.scene, '#ffc933');
       this.state = this.patrol ? 'patrol' : 'stand';
       if (this.patrol) this.pi = this.nearestWaypoint();
       this.passT = 0;
-    } else if (this.type === 'doki') {
+    } else if (this.kind === 'doki') {
       this.state = 'wander';
-    } else if (this.type === 'keiri' || this.type === 'mtg') {
-      this.cone = new VisionCone(game.scene, this.type === 'keiri' ? '#ff4b3a' : '#ffd23f');
+    } else if (this.kind === 'keiri' || this.kind === 'mtg') {
+      this.cone = new VisionCone(game.scene, this.kind === 'keiri' ? '#ff4b3a' : '#ffd23f');
       this.state = this.patrol ? 'patrol' : 'stand';
       if (this.patrol) this.pi = this.nearestWaypoint();
-    } else if (TALKERS.has(this.type) || this.type === 'shinjin') {
-      this.ring = new RangeRing(game.scene, { senpai: '#f0a23b', warikomi: '#8e6cc7', shinjin: '#3aa56c' }[this.type], this.tune.notice);
+    } else if (TALKERS.has(this.kind) || this.kind === 'shinjin') {
+      this.ring = new RangeRing(game.scene, { senpai: '#f0a23b', warikomi: '#8e6cc7', shinjin: '#3aa56c' }[this.kind], this.tune.notice);
       this.state = 'idle';
-    } else if (this.type === 'kanji') {
+    } else if (this.kind === 'kanji' || this.kind === 'zandaka') {
       this.state = 'guard';
       this.guard = game.stage.guard || { axis: 'z', min: spawn.z - 3, max: spawn.z + 3 };
     } else {
@@ -107,7 +111,7 @@ export class Enemy {
   }
 
   say(text, style = '', dur = 1.6) {
-    this.game.ui.bubble(this, text, style || this.type, dur);
+    this.game.ui.bubble(this, text, style || this.kind, dur);
   }
 
   distToPlayer() {
@@ -174,7 +178,7 @@ export class Enemy {
 
   /** つかまえられる状態か */
   get onPhone() {
-    return this.game.player?.phoneT > 0 && PHONE_RESPECT.has(this.type);
+    return this.game.player?.phoneT > 0 && PHONE_RESPECT.has(this.kind);
   }
 
   giveupLine() {
@@ -183,28 +187,29 @@ export class Enemy {
 
   get canCatch() {
     if (this.cool > 0 || this.behaving || this.onPhone) return false;
-    switch (this.type) {
+    switch (this.kind) {
       case 'doki': return ['wander', 'notice', 'rush'].includes(this.state);
       case 'shacho': return false;
       case 'senpai':
       case 'warikomi': return ['idle', 'notice', 'chase', 'return'].includes(this.state);
       case 'keiri':
       case 'mtg': return ['patrol', 'stand', 'spotted', 'chase', 'resume'].includes(this.state);
-      case 'kanji': return this.state === 'guard';
+      case 'kanji':
+      case 'zandaka': return this.state === 'guard';
       default: return false;
     }
   }
 
   get chasing() {
-    return this.state === 'chase' || this.state === 'rush' || (this.type === 'kanji' && this.state === 'guard' && this.distToPlayer() < 5);
+    return this.state === 'chase' || this.state === 'rush' || (this.kind === 'kanji' && this.state === 'guard' && this.distToPlayer() < 5);
   }
 
   alert() {
     if (this.cool > 0) return;
-    if (TALKERS.has(this.type) && (this.state === 'idle' || this.state === 'return')) this.notice();
-    else if ((this.type === 'keiri' || this.type === 'mtg') && ['patrol', 'stand', 'resume'].includes(this.state)) this.spot();
-    else if (this.type === 'shorui' && this.state === 'idle') this.throwT = 0;
-    else if (this.type === 'doki' && this.state === 'wander') this.dokiNotice();
+    if (TALKERS.has(this.kind) && (this.state === 'idle' || this.state === 'return')) this.notice();
+    else if ((this.kind === 'keiri' || this.kind === 'mtg') && ['patrol', 'stand', 'resume'].includes(this.state)) this.spot();
+    else if (this.kind === 'shorui' && this.state === 'idle') this.throwT = 0;
+    else if (this.kind === 'doki' && this.state === 'wander') this.dokiNotice();
   }
 
   notice() {
@@ -218,7 +223,7 @@ export class Enemy {
 
   spot() {
     this.set('spotted');
-    const keiri = this.type === 'keiri';
+    const keiri = this.kind === 'keiri';
     this.say(pick(Math.random, this.cfg.notice), keiri ? 'keiri shout' : 'mtg', 1.6);
     this.game.ui.emote(this, keiri ? '！！' : '！');
     this.char.play('jump');
@@ -247,12 +252,12 @@ export class Enemy {
     this.cool = this.tune.cooldown || 6;
     this.char.setMood('happy');
     if (this.cfg.after) this.say(pick(Math.random, this.cfg.after), '', 1.8);
-    this.char.pose = this.type === 'kanji' ? 'dance' : 'idle';
-    if (TALKERS.has(this.type)) this.set('return');
-    else if (this.type === 'keiri' || this.type === 'mtg') this.set(this.patrol ? 'resume' : 'stand');
-    else if (this.type === 'kanji') this.set('guard');
-    else if (this.type === 'doki') this.set('wander');
-    else if (this.type === 'shacho') this.set(this.patrol ? 'patrol' : 'stand');
+    this.char.pose = this.kind === 'kanji' ? 'dance' : 'idle';
+    if (TALKERS.has(this.kind)) this.set('return');
+    else if (this.kind === 'keiri' || this.kind === 'mtg') this.set(this.patrol ? 'resume' : 'stand');
+    else if (this.kind === 'kanji') this.set('guard');
+    else if (this.kind === 'doki') this.set('wander');
+    else if (this.kind === 'shacho') this.set(this.patrol ? 'patrol' : 'stand');
     this.nearMissed = false;
   }
 
@@ -260,18 +265,18 @@ export class Enemy {
     const c = this.char;
     this.t += dt;
     this.cool = Math.max(0, this.cool - dt);
-    if (this.cool <= 0 && c.mood === 'happy' && this.type !== 'kanji') c.setMood('normal');
+    if (this.cool <= 0 && c.mood === 'happy' && this.kind !== 'kanji') c.setMood('normal');
     const hidden = this.game.playerHidden || this.onPhone;
     const dist = this.distToPlayer();
     let pose = 'idle';
 
     // 社長に見られている間は、みんな大人しくなる
-    this.behaving = this.type !== 'shacho' && this.game.shachoSees(this.pos.x, this.pos.z);
+    this.behaving = this.kind !== 'shacho' && this.game.shachoSees(this.pos.x, this.pos.z);
     if (this.behaving) {
       if (!this.wasBehaving) {
         this.game.ui.emote(this, '…');
         if (this.state === 'chase' || this.state === 'rush' || this.state === 'follow') {
-          this.set(this.patrol ? 'resume' : this.type === 'doki' ? 'wander' : this.type === 'shinjin' ? 'return' : 'return');
+          this.set(this.patrol ? 'resume' : this.kind === 'doki' ? 'wander' : this.kind === 'shinjin' ? 'return' : 'return');
           this.cool = Math.max(this.cool, 1.5);
         }
       }
@@ -297,7 +302,7 @@ export class Enemy {
       return;
     }
 
-    switch (this.type) {
+    switch (this.kind) {
       case 'senpai':
       case 'warikomi':
         pose = this.updateSenpai(dt, dist, hidden);
@@ -313,7 +318,11 @@ export class Enemy {
         pose = this.updateShinjin(dt, dist, hidden);
         break;
       case 'kanji':
+      case 'zandaka':
         pose = this.updateKanji(dt, dist, hidden);
+        break;
+      case 'handout':
+        pose = this.updateHandout(dt, dist, hidden);
         break;
       case 'shacho':
         pose = this.updateShacho(dt, dist);
@@ -344,7 +353,7 @@ export class Enemy {
         c.headYaw = Math.sin(this.t * 0.8) * 0.5;
         c.targetYaw = this.homeYaw;
         // 割り込み係長は、印刷中の人なら遠くからでも気づく
-        const range = this.type === 'warikomi' && this.game.printing ? T.printNotice : T.notice;
+        const range = this.kind === 'warikomi' && this.game.printing ? T.printNotice : T.notice;
         if (!hidden && this.cool <= 0 && this.sees(range, Math.PI * 2, 0)) this.notice();
         this.ring?.update(this.pos.x, this.pos.z, this.cool > 0 ? 0 : clamp(1 - (dist - T.notice) / 4, 0, 1) * 0.55);
         return 'idle';
@@ -385,7 +394,7 @@ export class Enemy {
   updatePatroller(dt, dist, hidden) {
     const T = this.tune;
     const c = this.char;
-    const keiri = this.type === 'keiri';
+    const keiri = this.kind === 'keiri';
     let pose = 'idle';
     let coneOn = true;
     let intensity = this.cool > 0 ? 0.35 : 1;
@@ -626,10 +635,20 @@ export class Enemy {
     const c = this.char;
     const p = this.player;
     const g = this.guard;
-    const active = !hidden && this.cool <= 0 && dist < T.sense;
+    let active = !hidden && this.cool <= 0 && dist < T.sense;
     let tz = this.home.z;
     let tx = this.home.x;
-    if (active && g.axis === 'x') {
+    if (this.kind === 'zandaka') {
+      // 気まぐれにレーンを移る
+      this.laneT = (this.laneT ?? Math.random()) - dt;
+      if (this.laneT <= 0 || this.lane == null) {
+        this.laneT = 1.3 + Math.random() * 2.2;
+        this.lane = g.min + Math.floor(Math.random() * (g.max - g.min + 1)) + 0.5;
+      }
+      if (g.axis === 'x') tx = this.lane;
+      else tz = this.lane;
+      active = this.cool <= 0;
+    } else if (active && g.axis === 'x') {
       tx = clamp(p.pos.x + p.vel.x * 0.2, g.min + 0.5, g.max + 0.5);
       tz = this.home.z + clamp((p.pos.z - this.home.z) * 0.15, -0.6, 0.6);
     } else if (active) {
@@ -721,7 +740,7 @@ export class Enemy {
 
   /** 社長の視界に (x, z) が入っているか */
   viewContains(x, z) {
-    if (this.type !== 'shacho' || this.cool > 0 || this.state === 'spotted') return false;
+    if (this.kind !== 'shacho' || this.cool > 0 || this.state === 'spotted') return false;
     const T = this.tune;
     const dx = x - this.pos.x;
     const dz = z - this.pos.z;
@@ -793,7 +812,7 @@ export class Enemy {
   /** タイトル画面の背景用：巡回だけする */
   demoUpdate(dt) {
     const c = this.char;
-    if (this.patrol && (this.type === 'keiri' || this.type === 'mtg' || this.type === 'shacho')) {
+    if (this.patrol && (this.kind === 'keiri' || this.kind === 'mtg' || this.kind === 'shacho')) {
       const wp = this.patrol[this.pi];
       const d = this.moveTo(wp.x, wp.z, this.tune.patrol, dt);
       if (d < 0.2) this.pi = (this.pi + 1) % this.patrol.length;
@@ -804,7 +823,7 @@ export class Enemy {
     }
     if (this.cone) this.cone.visible = false;
     this.ring?.update(this.pos.x, this.pos.z, 0);
-    c.pose = this.type === 'kanji' ? 'dance' : 'idle';
+    c.pose = this.kind === 'kanji' ? 'dance' : 'idle';
     this.idle(dt);
   }
 
@@ -816,6 +835,20 @@ export class Enemy {
     c.speed = spd;
     if (spd > 0.25) c.faceDir(this.vel.x, this.vel.z);
     c.update(dt);
+  }
+
+  // --- ティッシュ配り ---------------------------------------------------------
+  updateHandout(dt, dist, hidden) {
+    const c = this.char;
+    this.stop(dt);
+    if (dist < 6 && !hidden) this.facePlayer();
+    else c.targetYaw = this.homeYaw;
+    this.lineT -= dt;
+    if (dist < 5 && this.lineT < 0 && !hidden) {
+      this.lineT = 2.5 + Math.random() * 1.5;
+      this.say(pick(Math.random, this.cfg.notice), '', 1.2);
+    }
+    return dist < 3 && !hidden ? 'talk' : 'idle';
   }
 
   dispose() {

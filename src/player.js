@@ -3,6 +3,7 @@ import { Character } from './characters.js';
 import { Ghosts } from './effects.js';
 import { PLAYER_LOOK } from './cast.js';
 import { damp } from './util.js';
+import { ITEMS, BAG_SIZE, openUmbrella } from './items.js';
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -41,6 +42,9 @@ export class Player {
     this.phoneT = 0;
     this.phoneCD = 0;
     this.phoneLeft = PHONE_USES;
+    this.items = [];
+    this.energyT = 0;
+    this.umbrellaT = 0;
     this.boostT = 0;
     this.bowing = false;
     this.facing = new THREE.Vector2(0, -1);
@@ -54,6 +58,10 @@ export class Player {
     this.phoneMesh.position.set(0, -0.36, 0.05);
     this.phoneMesh.visible = false;
     this.char.armR.add(this.phoneMesh);
+    this.umbrella = openUmbrella();
+    this.umbrella.position.set(0, 1.75, 0);
+    this.umbrella.visible = false;
+    this.char.root.add(this.umbrella);
 
     // 足元のリング（壁の陰でも見える）
     this.ringMat = new THREE.MeshBasicMaterial({ color: '#8fd3ff', transparent: true, opacity: 0.75, depthTest: false, depthWrite: false });
@@ -88,7 +96,7 @@ export class Player {
 
   speedFactor() {
     const paper = Math.max(0.5, 1 - this.papers * 0.085);
-    return paper * this.aura * (this.slowT > 0 ? 0.55 : 1) * (this.boostT > 0 ? 1.3 : 1) * (this.phoneT > 0 ? 0.8 : 1);
+    return paper * this.aura * (this.slowT > 0 ? 0.55 : 1) * (this.boostT > 0 ? 1.3 : 1) * (this.phoneT > 0 ? 0.8 : 1) * (this.energyT > 0 ? 1.35 : 1) * (this.umbrellaT > 0 ? 0.85 : 1);
   }
 
   addPapers(n) {
@@ -125,6 +133,44 @@ export class Player {
     this.game.audio.dash();
   }
 
+  /** カバンに入れる。いっぱいなら false */
+  addItem(id) {
+    if (this.items.length >= BAG_SIZE) return false;
+    this.items.push(id);
+    return true;
+  }
+
+  hasItem(id) {
+    return this.items.includes(id);
+  }
+
+  takeItem(id) {
+    const i = this.items.indexOf(id);
+    if (i < 0) return false;
+    this.items.splice(i, 1);
+    return true;
+  }
+
+  /** 使えるアイテムを先頭から1つ使う */
+  useItem() {
+    const id = this.items.find((k) => !ITEMS[k].passive);
+    if (!id) {
+      this.game.ui.float(this.pos.x, 2.3, this.pos.z, this.items.length ? '菓子折りは持っているだけで効く' : 'カバンは空っぽ', 'info');
+      return;
+    }
+    this.takeItem(id);
+    if (id === 'energy') {
+      this.energyT = 8;
+      this.dashCD = 0;
+      this.game.ui.bubble(this, 'ゴクッ…！ みなぎってきた！', 'player', 1.6);
+    } else if (id === 'umbrella') {
+      this.umbrellaT = 5;
+      this.game.ui.bubble(this, '（傘で顔を隠す）', 'player', 1.4);
+    }
+    this.game.audio.sparkle();
+    this.game.onItemsChanged();
+  }
+
   startPhone() {
     this.phoneLeft--;
     this.phoneT = PHONE_TIME;
@@ -140,9 +186,13 @@ export class Player {
     this.slowT = Math.max(0, this.slowT - dt);
     this.phoneCD = Math.max(0, this.phoneCD - dt);
     if (!this.frozen) {
+      this.energyT = Math.max(0, this.energyT - dt);
+      this.umbrellaT = Math.max(0, this.umbrellaT - dt);
+      if (this.energyT > 0) this.dashCD = Math.max(0, this.dashCD - dt * 2);
       this.phoneT = Math.max(0, this.phoneT - dt);
       this.boostT = Math.max(0, this.boostT - dt);
     }
+    if (!this.frozen && input.takeItem?.()) this.useItem();
     if (!this.frozen && input.takePhone?.() && this.phoneCD <= 0 && this.phoneT <= 0) {
       if (this.phoneLeft > 0) this.startPhone();
       else {
@@ -150,7 +200,7 @@ export class Player {
         this.game.ui.float(this.pos.x, 2.3, this.pos.z, 'もう電話のふりはできない', 'info');
       }
     }
-    if (this.boostT > 0 && !this.frozen && Math.hypot(this.vel.x, this.vel.y) > 2) {
+    if ((this.boostT > 0 || this.energyT > 0) && !this.frozen && Math.hypot(this.vel.x, this.vel.y) > 2) {
       this.trailT = (this.trailT || 0) - dt;
       if (this.trailT <= 0) {
         this.trailT = 0.06;
@@ -204,6 +254,8 @@ export class Player {
     if (spd > 0.3) c.faceDir(this.vel.x, this.vel.y);
     if (!this.frozen) c.pose = this.phoneT > 0 ? 'phone' : this.bowing && Math.hypot(this.vel.x, this.vel.y) < 0.9 ? 'bow' : 'idle';
     this.phoneMesh.visible = this.phoneT > 0;
+    this.umbrella.visible = this.umbrellaT > 0;
+    if (this.umbrella.visible) this.umbrella.rotation.y += dt * 1.5;
     c.sweat.visible = this.papers >= 4 || this.aura < 1;
     c.update(dt);
 

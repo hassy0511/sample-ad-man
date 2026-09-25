@@ -13,6 +13,8 @@ import { UI } from './ui.js';
 import { Post } from './post.js';
 import { setupPwa } from './pwa.js';
 import { Ally } from './ally.js';
+import { ITEMS, itemMesh } from './items.js';
+import { Traffic } from './traffic.js';
 import { clamp, damp, lerp, smooth, pick, textTexture } from './util.js';
 
 const RANK_ORDER = ['C', 'B', 'A', 'S'];
@@ -197,6 +199,9 @@ class Game {
       this.boss = b;
     }
 
+    // 信号と車（屋外ステージ）
+    this.traffic = stage.outdoor ? new Traffic(this) : null;
+
     // 味方のエース新人
     this.ally = this.world.spawns.ally && !demo ? new Ally(this, this.world.spawns.ally) : null;
 
@@ -245,6 +250,14 @@ class Game {
       m.position.set(s.x + Math.sin(s.yaw) * 0.9, 0.04, s.z + Math.cos(s.yaw) * 0.9);
       this.scene.add(m);
       return m;
+    });
+
+    // カバンに入るアイテム
+    this.itemPicks = (this.world.spawns.items || []).map((it) => {
+      const g = itemMesh(it.id);
+      g.position.set(it.x, 0.65, it.z);
+      this.scene.add(g);
+      return { ...it, g, taken: false, noteT: 0 };
     });
 
     // 缶コーヒー
@@ -299,6 +312,8 @@ class Game {
     this.player = null;
     this.ally?.dispose();
     this.ally = null;
+    this.traffic?.dispose();
+    this.traffic = null;
     for (const c of this.print?.copiers || []) {
       if (c.sign) {
         c.sign.removeFromParent();
@@ -320,7 +335,7 @@ class Game {
       for (const m of this.boss.meshes) m.geometry.dispose();
       this.boss = null;
     }
-    for (const p of this.pickups || []) {
+    for (const p of [...(this.pickups || []), ...(this.itemPicks || [])]) {
       p.g.removeFromParent();
       p.g.traverse((o) => {
         if (o.isMesh) {
@@ -330,6 +345,7 @@ class Game {
       });
     }
     this.pickups = [];
+    this.itemPicks = [];
     for (const m of this.shredMarks || []) {
       m.removeFromParent();
       m.geometry.dispose();
@@ -400,6 +416,7 @@ class Game {
     this.ui.show(null);
     this.ui.hud(true, this.stage);
     this.ui.setAlly(false);
+    this.onItemsChanged();
     for (const e of this.enemies) this.record('met', e.type);
     if (this.rally) this.ui.setRally(this.rally, 0, `${this.rally[0].label}席`);
     if (this.print) this.ui.setGoalLabel('動くコピー機');
@@ -491,6 +508,7 @@ class Game {
     if (this.world.playerLight && P) this.world.playerLight.position.set(P.pos.x, 2.6, P.pos.z + 0.4);
     for (const r of this.rally || []) r.char.update(dt);
     this.ally?.update(dt);
+    this.traffic?.update(dt, this.state === 'play' || this.state === 'title' || this.state === 'intro');
     for (const c of this.print?.copiers || []) if (c.sign) c.sign.quaternion.copy(this.camera.quaternion);
     this.fx.update(dt);
     this.updateCamera(dt);
@@ -519,7 +537,7 @@ class Game {
         return;
       }
     }
-    P.bowing = this.enemies.some((e) => e.type === 'shacho' && e.seesPlayer);
+    P.bowing = this.enemies.some((e) => e.kind === 'shacho' && e.seesPlayer);
 
     // 缶コーヒー
     for (const p of this.pickups) {
@@ -536,13 +554,37 @@ class Game {
       }
     }
 
+    // アイテムを拾う
+    for (const it of this.itemPicks) {
+      if (it.taken) continue;
+      it.noteT = Math.max(0, it.noteT - dt);
+      it.g.rotation.y += dt * 2;
+      it.g.position.y = 0.65 + Math.sin(this.time * 3 + it.x) * 0.08;
+      if (Math.hypot(it.x - P.pos.x, it.z - P.pos.z) < 0.7) {
+        if (P.addItem(it.id)) {
+          it.taken = true;
+          it.g.visible = false;
+          this.fx.sparkle(it.x, 0.8, it.z, 14);
+          this.audio.sparkle();
+          this.ui.float(P.pos.x, 2.3, P.pos.z, `${ITEMS[it.id].name}をカバンに入れた`, 'good');
+          this.onItemsChanged();
+        } else if (it.noteT <= 0) {
+          it.noteT = 3;
+          this.ui.float(P.pos.x, 2.3, P.pos.z, 'カバンがいっぱい', 'info');
+        }
+      }
+    }
+    if (P.umbrellaT > 0) this.playerHidden = true;
+
     // つかまる・すれ違う
     for (const e of this.enemies) {
       const d = Math.hypot(e.pos.x - P.pos.x, e.pos.z - P.pos.z);
-      if (e.type === 'shorui') {
-        if (d < 0.75 && e.cool <= 0 && !P.invulnerable) this.handoff(e);
+      if (e.kind === 'shorui' || e.kind === 'handout') {
+        const reach = e.kind === 'handout' ? e.tune.reach : 0.75;
+        if (d < reach && e.cool <= 0 && !P.invulnerable && P.umbrellaT <= 0) this.handoff(e);
         continue;
       }
+      if (P.umbrellaT > 0) continue;
       if (e.canCatch && d < e.r + P.r + 0.1) {
         if (P.invulnerable) {
           if (P.dashing && !e.nearMissed) this.nearMiss(e);
@@ -635,7 +677,7 @@ class Game {
 
   /** 社長の視界に入っているか（ほかの社員が大人しくなる判定） */
   shachoSees(x, z) {
-    for (const e of this.enemies) if (e.type === 'shacho' && e.viewContains(x, z)) return true;
+    for (const e of this.enemies) if (e.kind === 'shacho' && e.viewContains(x, z)) return true;
     return false;
   }
 
@@ -665,6 +707,10 @@ class Game {
     this.slowT = 0.12;
   }
 
+  onItemsChanged() {
+    this.ui.setItems(this.player.items, (this.world.spawns.items || []).length > 0);
+  }
+
   onAllyJoin() {
     const P = this.player;
     this.ui.float(P.pos.x, 2.4, P.pos.z, 'エース新人が仲間になった！', 'good');
@@ -692,16 +738,16 @@ class Game {
 
   handoff(e) {
     const P = this.player;
-    e.cool = 3.5;
+    e.cool = e.tune.cooldown || 3.5;
     e.facePlayer();
     e.char.play('throw');
-    e.say(pick(Math.random, e.cfg.talks[0]), 'shorui', 1.8);
+    e.say(pick(Math.random, e.cfg.talks[0]), e.kind === 'handout' ? 'mtg' : 'shorui', 1.8);
     P.addPapers(1);
-    this.record('caught', 'shorui');
+    this.record('caught', e.type);
     this.clock += e.cfg.penalty;
     this.fx.papers(P.pos.x, 1.6, P.pos.z, 5, 0.6);
     this.audio.paperHit();
-    this.ui.float(P.pos.x, 2.3, P.pos.z, `-${e.cfg.penalty}分　書類+1`, 'minus');
+    this.ui.float(P.pos.x, 2.3, P.pos.z, `-${e.cfg.penalty}分　${e.kind === 'handout' ? 'チラシ' : '書類'}+1`, 'minus');
   }
 
   paperLanded(to, enemy) {
@@ -790,21 +836,29 @@ class Game {
     P.char.pose = 'listen';
     P.char.setMood('worried');
     e.char.pose = 'talk';
-    e.char.setMood(e.type === 'keiri' ? 'angry' : 'happy');
+    e.char.setMood(e.kind === 'keiri' ? 'angry' : 'happy');
     e.cone && (e.cone.visible = false);
     this.ui.clearWorld();
     this.ui.aura(0);
     this.audio.caught();
-    this.shake(e.type === 'keiri' ? 0.3 : 0.15);
-    const lines = pick(Math.random, e.cfg.talks);
+    this.shake(e.kind === 'keiri' ? 0.3 : 0.15);
+    let lines = pick(Math.random, e.cfg.talks);
+    let penalty = e.cfg.penalty;
+    let stampSmall = `<br>${e.cfg.stamp}`;
+    if (P.takeItem('omiyage')) {
+      lines = [lines[0], '（菓子折りを差し出す）', 'お、気が利くね！…じゃあ手短に。'];
+      penalty = Math.ceil(penalty / 2);
+      stampSmall = '<br>菓子折り効果';
+      this.onItemsChanged();
+    }
     this.openTalk({
       who: e.cfg,
       portrait: this.ui.portraits[e.type],
       tint: e.cfg.tint,
       lines,
       voice: e.cfg.voice,
-      penalty: e.cfg.penalty,
-      stamp: [`-${e.cfg.penalty}分`, `<br>${e.cfg.stamp}`],
+      penalty,
+      stamp: [`-${penalty}分`, stampSmall],
       focus: e,
       onDone: () => {
         e.afterTalk();

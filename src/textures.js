@@ -250,6 +250,9 @@ export const FLOOR_STYLES = {
   ';': { base: [146, 152, 130], kind: 'carpet' },
   ',': { base: [201, 161, 118], kind: 'wood' },
   ':': { base: [216, 210, 200], kind: 'stone' },
+  '_': { base: [196, 190, 180], kind: 'paver' },
+  '=': { base: [74, 78, 88], kind: 'road' },
+  'z': { base: [74, 78, 88], kind: 'cross' },
 };
 
 export function floorTexture(grid, floorType, aoTiles) {
@@ -281,6 +284,41 @@ export function floorTexture(grid, floorType, aoTiles) {
         g.strokeStyle = 'rgba(0,0,0,0.07)';
         g.lineWidth = 1;
         g.strokeRect(px + 0.5, py + 0.5, S - 1, S - 1);
+      } else if (st.kind === 'paver') {
+        // 歩道のインターロッキング
+        const q = S / 4;
+        for (let k = 0; k < 16; k++) {
+          const v = (rng() - 0.5) * 18;
+          const tone = (k + y) % 3 === 0 ? -14 : 0;
+          g.fillStyle = `rgb(${r + v + tone},${gg + v + tone},${b + v + tone})`;
+          g.fillRect(px + (k % 4) * q, py + Math.floor(k / 4) * q, q, q);
+        }
+        g.strokeStyle = 'rgba(90,85,78,0.35)';
+        g.lineWidth = 1;
+        for (let k = 0; k <= 4; k++) {
+          g.beginPath(); g.moveTo(px + k * q, py); g.lineTo(px + k * q, py + S); g.stroke();
+          g.beginPath(); g.moveTo(px, py + k * q); g.lineTo(px + S, py + k * q); g.stroke();
+        }
+      } else if (st.kind === 'road' || st.kind === 'cross') {
+        g.fillStyle = `rgb(${r + j * 0.5},${gg + j * 0.5},${b + j * 0.5})`;
+        g.fillRect(px, py, S, S);
+        for (let i = 0; i < 40; i++) {
+          g.fillStyle = `rgba(${rng() < 0.5 ? '0,0,0' : '255,255,255'},0.07)`;
+          g.fillRect(px + rng() * S, py + rng() * S, 2, 2);
+        }
+        const roadAt = (dx, dy) => '=z'.includes(grid.at(x + dx, y + dy));
+        if (st.kind === 'cross') {
+          g.fillStyle = 'rgba(245,245,240,0.92)';
+          if (roadAt(-1, 0) || roadAt(1, 0)) for (let k = 0; k < 2; k++) g.fillRect(px + 4 + k * (S / 2), py + 2, S / 2 - 8, S - 4);
+          else for (let k = 0; k < 2; k++) g.fillRect(px + 2, py + 4 + k * (S / 2), S - 4, S / 2 - 8);
+        } else if (roadAt(0, -1) && !roadAt(0, 1)) {
+          // 車線の区切り（破線）
+          g.fillStyle = 'rgba(240,240,235,0.85)';
+          if (x % 2 === 0) g.fillRect(px + 6, py + S - 3, S - 12, 3);
+        } else if (!roadAt(0, -1) || !roadAt(0, 1)) {
+          g.fillStyle = 'rgba(240,240,235,0.6)';
+          g.fillRect(px, roadAt(0, -1) ? py + S - 6 : py + 3, S, 2);
+        }
       } else if (st.kind === 'wood') {
         const plank = S / 4;
         for (let k = 0; k < 4; k++) {
