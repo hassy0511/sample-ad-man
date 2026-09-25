@@ -16,11 +16,13 @@ import { Ally } from './ally.js';
 import { ITEMS, itemMesh } from './items.js';
 import { Traffic } from './traffic.js';
 import { Weather } from './rain.js';
+import { Suitcase } from './suitcase.js';
+import { Belts } from './belts.js';
 import { clamp, damp, lerp, smooth, pick, textTexture } from './util.js';
 
 const RANK_ORDER = ['C', 'B', 'A', 'S'];
 const PITCH = 0.93;
-const TEMPO = { 1: 108, 2: 116, 3: 124, 13: 112, 14: 120, 15: 128 };
+const TEMPO = { 1: 108, 2: 116, 3: 124, 13: 112, 14: 120, 15: 128, 16: 120, 17: 128, 18: 108 };
 
 class Game {
   constructor() {
@@ -143,6 +145,8 @@ class Game {
     await Promise.race([fonts, new Promise((r) => setTimeout(r, 3500))]);
 
     const looks = Object.fromEntries(Object.entries(CAST).map(([k, v]) => [k, v.look]));
+    // 名前つきの見た目違い（variants）は顔アイコンを別に作る
+    for (const [k, c] of Object.entries(CAST)) (c.variants || []).forEach((vv, i) => { if (vv.name) looks[`${k}_${i}`] = vv.look ? { ...c.look, ...vv.look } : c.look; });
     looks.boss = BOSS.look;
     looks.kacho = GOAL_NPC.kacho.look;
     looks.ally = ALLY.look;
@@ -170,6 +174,7 @@ class Game {
     this.stage = stage;
     this.world = new World(stage, this.renderer);
     this.scene.add(this.world.group);
+    this.belts = stage.map.some((r) => /[<>]/.test(r)) ? new Belts(this) : null;
     const p = this.world.preset;
     this.scene.background = this.world.background;
     this.scene.fog = new THREE.Fog(p.fog, 38, 80);
@@ -240,6 +245,14 @@ class Game {
 
     // 味方のエース新人
     this.ally = this.world.spawns.ally && !demo ? new Ally(this, this.world.spawns.ally) : null;
+
+    // 出張のキャリーケース（音を出す）
+    this.suitcase = stage.suitcase ? new Suitcase(this) : null;
+    this.noiseTip = false;
+    this.beltTip = false;
+    this.hurryShown = false;
+    this.tipQueue = [];
+    this.tipT = 0;
 
     // コピー機探し
     this.print = null;
@@ -352,6 +365,11 @@ class Game {
     this.traffic = null;
     this.weather?.dispose();
     this.weather = null;
+    this.suitcase?.dispose();
+    this.suitcase = null;
+    this.belts?.dispose();
+    this.belts = null;
+    this.ui.banner(null);
     for (const r of this.rooms?.list || []) {
       r.sign.removeFromParent();
       r.sign.geometry.dispose();
@@ -557,6 +575,8 @@ class Game {
     if (this.world.playerLight && P) this.world.playerLight.position.set(P.pos.x, 2.6, P.pos.z + 0.4);
     for (const r of this.rally || []) r.char.update(dt);
     this.ally?.update(dt);
+    this.belts?.update(dt);
+    this.suitcase?.update(dt);
     this.traffic?.update(dt, this.state === 'play' || this.state === 'title' || this.state === 'intro');
     this.weather?.update(dt);
     for (const r of this.rooms?.list || []) r.sign.quaternion.copy(this.camera.quaternion);
@@ -683,6 +703,23 @@ class Game {
       return;
     }
     if (this.traffic && this.weather) this.updateSplash(dt);
+    // ステージの説明を順に出す・初めて歩道に乗ったとき・締切が近いとき
+    if (this.tipQueue.length) {
+      this.tipT -= dt;
+      if (this.tipT <= 0) {
+        this.tipT = 2.6;
+        this.ui.float(P.pos.x, 2.7, P.pos.z, this.tipQueue.shift(), 'info');
+      }
+    }
+    if (this.belts && !this.beltTip && this.belts.isBelt(P.pos.x, P.pos.z)) {
+      // 乗るとすぐ流されるので、その場に浮かべず画面の真ん中に出す
+      this.beltTip = true;
+      this.ui.toast('動く歩道：速くて静か。途中で降りられない', 'announce');
+    }
+    if (stage.hurry && !this.hurryShown && stage.deadline - this.clock <= stage.hurry.left) {
+      this.hurryShown = true;
+      this.ui.toast(stage.hurry.text, 'announce');
+    }
     if (this.rally) {
       if (this.updateRally(dt)) return;
     } else if (this.print) {
@@ -710,14 +747,16 @@ class Game {
     const key = tz * g.w + tx;
     if (key !== this.lastTile && g.isWalk(tx, tz)) {
       this.lastTile = key;
-      this.playerField = g.field(tx, tz);
+      this.playerField = g.field(tx, tz, true); // 追いかける人は動く歩道を逆走してでも来る
     }
   }
 
   separate() {
     const E = this.enemies;
     for (let i = 0; i < E.length; i++) {
+      if (E[i].state === 'lurk') continue;
       for (let j = i + 1; j < E.length; j++) {
+        if (E[j].state === 'lurk') continue;
         const a = E[i].pos;
         const b = E[j].pos;
         const dx = b.x - a.x;
@@ -776,6 +815,63 @@ class Game {
     this.fx.sparkle(this.ally.pos.x, 1, this.ally.pos.z, 16);
     this.audio.sparkle();
     this.ui.setAlly(true, this.ui.portraits.ally);
+    // 出張ではケースを持ってくれる（その間は無音）
+    if (this.suitcase) {
+      this.suitcase.carrier = this.ally;
+      this.ally.say('先輩、お荷物お持ちします！', 2);
+    }
+  }
+
+  onPlayerDash() {
+    this.suitcase?.onDash();
+  }
+
+  /** キャリーケースなどの物音。半径 r に入った人が振り向き、近くの客室のドアが開く */
+  noise(x, z, r, src = 'walk') {
+    if (!this.suitcase || this.state !== 'play' || r <= 0) return;
+    this.suitcase.ring(x, z, r, src);
+    if (src !== 'voice') this.player.noiseT = 0.18;
+    let heard = 0;
+    for (const e of this.enemies) if (e.hear(x, z, r, src)) heard++;
+    if (src !== 'voice' && this.world.doors.length) {
+      let opened = 0;
+      for (const e of this.enemies) {
+        if (opened >= 2) break;
+        if (e.door == null || e.state !== 'lurk' || e.rearm > 0 || e.cool > 0) continue;
+        const d = this.world.doors[e.door];
+        if (Math.hypot(d.x - x, d.z - z) > r + 0.4) continue;
+        opened++;
+        heard++;
+        this.world.openDoor(e.door);
+        this.audio.door();
+        e.peek();
+      }
+    }
+    if (heard && !this.noiseTip) {
+      this.noiseTip = true;
+      this.ui.float(this.player.pos.x, 3.3, this.player.pos.z, '音で気づかれた！', 'minus');
+    }
+  }
+
+  /** ばらまき土産：まわりの人にお土産を配って、しばらく大人しくさせる */
+  scatterGifts() {
+    const P = this.player;
+    let n = 0;
+    for (const e of this.enemies) {
+      if (e.state === 'lurk' || !e.char.root.visible) continue;
+      if (Math.hypot(e.pos.x - P.pos.x, e.pos.z - P.pos.z) > 4.5) continue;
+      if (e.kind === 'keiri' || e.kind === 'shacho') {
+        e.say('…これ、経費で落としてないでしょうね？', '', 1.8);
+        continue;
+      }
+      e.calm(10);
+      e.say(pick(Math.random, ['あ、どうもどうも！', 'お、名物だ！', '気が利くね〜！', 'わざわざすみません〜！']), '', 1.6);
+      this.ui.emote(e, '♪');
+      n++;
+    }
+    this.ui.bubble(P, n ? 'みなさん、どうぞどうぞ！' : '（だれもいない…自分で1個食べた）', 'player', 1.6);
+    this.ui.float(P.pos.x, 3.2, P.pos.z, n ? `ばらまき！ ${n}人おとなしく` : 'ばらまき空振り', n ? 'good' : 'info');
+    this.fx.sparkle(P.pos.x, 1.2, P.pos.z, 10);
   }
 
   onShinjinTrip(e) {
@@ -854,6 +950,10 @@ class Game {
       this.fx.sparkle(P.pos.x, 1, P.pos.z, 14);
       this.audio.sparkle();
       this.ui.setAlly(false);
+      if (this.suitcase?.carrier) {
+        this.suitcase.carrier = null;
+        this.ui.float(P.pos.x, 3.0, P.pos.z, 'ケースが戻ってきた', 'info');
+      }
       return;
     }
     this.record('caught', e.type);
@@ -913,7 +1013,7 @@ class Game {
     }
     this.openTalk({
       who: e.cfg,
-      portrait: this.ui.portraits[e.type],
+      portrait: this.ui.portraits[e.face || e.type],
       tint: e.cfg.tint,
       lines,
       voice: e.cfg.voice,
@@ -1047,6 +1147,8 @@ class Game {
     this.ui.goalPointer(this.camera, g, false);
     if (this.flyT > D) {
       this.state = 'play';
+      this.tipQueue = [...(this.stage.tips || [])];
+      this.tipT = 0.8;
       this.ui.toast('スタート！');
       this.audio.countdown(true);
       this.input.reset();
@@ -1252,15 +1354,15 @@ class Game {
           F.tick = 0.3;
           this.audio.noise(0.05, { freq: 1500, q: 2, vol: 0.08 });
         }
-        this.ui.setProgress(F, F.progress, 'どれが自分の傘…？');
+        this.ui.setProgress(F, F.progress, this.stage.fetchProgress || 'どれが自分の傘…？');
       } else if (F.progress > 0) {
-        this.ui.setProgress(F, F.progress, '探索中断');
+        this.ui.setProgress(F, F.progress, this.stage.fetchPause || '探索中断');
       }
       if (F.progress >= 1) {
         F.phase = 'deliver';
         this.world.goalFx.group.visible = true;
         this.ui.setProgress(null);
-        this.ui.bubble(P, 'あった！…たぶんこれ！', 'player', 1.8);
+        this.ui.bubble(P, this.stage.fetchLine || 'あった！…たぶんこれ！', 'player', 1.8);
         this.ui.float(P.pos.x, 2.4, P.pos.z, this.stage.fetchDone, 'good');
         this.fx.sparkle(P.pos.x, 1.2, P.pos.z, 14);
         this.audio.stamp();
@@ -1388,8 +1490,10 @@ class Game {
     this.world.goalFx.group.visible = false;
     this.ui.goalPointer(this.camera, null, false);
     this.ui.aura(0);
+    this.ui.banner(null);
     this.audio.setTension(false);
-    const type = this.stage.goalType;
+    // goalEnd で演出だけ差し替えられる（客室がゴールの fetch など）
+    const type = this.stage.goalEnd || this.stage.goalType;
     if (type === 'boss' || type === 'desk') {
       const b = this.boss;
       const npc = this.goalNpc;
@@ -1564,6 +1668,7 @@ class Game {
     P.char.setMood('surprised');
     this.ui.toast('時間切れ', 'stamp-toast');
     this.ui.aura(0);
+    this.ui.banner(null);
     this.audio.stopMusic();
     this.audio.fail();
     this.shake(0.25);

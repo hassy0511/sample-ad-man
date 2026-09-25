@@ -185,6 +185,11 @@ function buildTorso(look) {
     b.add(cyl(0.1, 0.001, 0.22, 3), look.shirt, M(0, 0.68, 0.142, 0, 0, Math.PI, 1, 1, 0.2));
     for (const y of t.type === 'cardigan' ? [0.54, 0.47, 0.4] : [0.5]) b.add(sph(), t.type === 'cardigan' ? '#e9dcc4' : '#1b1b1f', M(0, y, 0.152, 0, 0, 0, 0.018, 0.018, 0.01));
   }
+  if (t.type === 'yukata') {
+    // 浴衣：衿の合わせと帯
+    for (const sx of [1, -1]) b.add(unitBox, look.shirt, M(sx * 0.045, 0.64, 0.152, 0, 0, -sx * 0.5, 0.035, 0.26, 0.012));
+    b.add(rbox(w + 0.02, 0.08, 0.31, 0.03), '#2b3a67', M(0, 0.45, 0));
+  }
   if (t.type === 'shirt') {
     b.add(unitBox, '#ffffff', M(0.1 * (look.width || 1), 0.64, 0.151, 0, 0, 0, 0.08, 0.07, 0.01));
     b.add(cyl(0.07, 0.001, 0.08, 3), look.shirt, M(0, 0.76, 0.14, 0, 0, Math.PI, 1, 1, 0.25));
@@ -270,6 +275,11 @@ function addProp(b, name, side) {
       b.add(cyl(0.014, 0.014, 1.1, 6), '#c9ccd1', M(hx, hy - 0.2, 0.05));
       b.add(unitBox, '#5dade2', M(hx, hy - 0.73, 0.05, 0, 0, 0, 0.1, 0.05, 0.08));
       b.add(unitBox, '#eceae3', M(hx, hy - 0.78, 0.05, 0, 0, 0, 0.36, 0.06, 0.14));
+      break;
+    case 'can':
+      // 缶ビール
+      b.add(cyl(0.04, 0.04, 0.12, 12), '#d9dde2', M(hx, hy - 0.03, 0.06));
+      b.add(cyl(0.041, 0.041, 0.04, 12), '#e0b030', M(hx, hy - 0.03, 0.06));
       break;
     case 'bag':
       b.add(rbox(0.09, 0.24, 0.34, 0.03), '#3b2a22', M(hx, hy - 0.16, 0));
@@ -511,7 +521,7 @@ export class Character {
 
     // 持ち物による腕の基本姿勢
     const carryL = { papers: -0.9, notebook: -0.75, clipboard: -0.7, list: -0.7, folder: 0.05, laptop: 0.05, bag: 0 }[this.propL];
-    const carryR = { mug: -0.55, redpen: -0.45, wallet: -0.3, penlight: -0.5, phone: -0.95, kasa: -0.15, mop: -0.45 }[this.propR];
+    const carryR = { mug: -0.55, redpen: -0.45, wallet: -0.3, penlight: -0.5, phone: -0.95, kasa: -0.15, mop: -0.45, can: -0.55 }[this.propR];
     if (carryL !== undefined) {
       armL = carryL + armL * 0.25;
       if (this.propL === 'folder' || this.propL === 'laptop') armLz = 0.02;
@@ -601,6 +611,12 @@ export class Character {
         headX = 0.35;
         legL = 0.12;
         legR = -0.12;
+        break;
+      case 'scroll':
+        // スマホに目を落としたまま
+        armR = -1.15;
+        armRz = -0.1;
+        headX = 0.38;
         break;
       case 'mop':
         armR = -0.5 + Math.sin(t * 6) * 0.35;

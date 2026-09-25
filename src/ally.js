@@ -102,6 +102,7 @@ export class Ally {
       }
       this.pos.x += this.vel.x * dt;
       this.pos.z += this.vel.z * dt;
+      this.pos.x += (this.game.belts?.vx(this.pos.x, this.pos.z) || 0) * dt;
       this.game.world.grid.resolveCircle(this.pos, 0.28);
       c.pose = 'idle';
     } else if (this.state === 'busy') {

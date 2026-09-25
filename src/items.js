@@ -28,9 +28,15 @@ export const ITEMS = {
     color: '#3aa0d8',
     passive: true,
   },
+  baramaki: {
+    name: 'ばらまき土産',
+    short: 'ばらまき',
+    desc: '使うと、まわりの人にお土産を配る。受け取った人は10秒間話しかけてこない（音にも気づかない）。',
+    color: '#e87fa5',
+  },
 };
 
-export const ITEM_CODES = { E: 'energy', U: 'umbrella', O: 'omiyage', S: 'shoecover' };
+export const ITEM_CODES = { E: 'energy', U: 'umbrella', O: 'omiyage', S: 'shoecover', F: 'baramaki' };
 export const BAG_SIZE = 2;
 
 /** 床に置くアイテムの見た目 */
@@ -60,6 +66,17 @@ export function itemMesh(id) {
       const heel = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.085, 0.14, 12), mat);
       heel.position.set(sx, 0.02, -0.07);
       g.add(toe, heel);
+    }
+  } else if (id === 'baramaki') {
+    // 個包装のお菓子の箱（上に小箱3つ）
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.2, 0.3), std('#e87fa5'));
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.21, 0.07), std('#ffffff'));
+    g.add(box, band);
+    for (let i = 0; i < 3; i++) {
+      const s = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.08), std(i === 1 ? '#ffffff' : '#f6c1d4'));
+      s.position.set((i - 1) * 0.13, 0.13, (i % 2) * 0.05 - 0.02);
+      s.rotation.y = (i - 1) * 0.3;
+      g.add(s);
     }
   } else {
     const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.18, 0.3), std('#f3ead8'));

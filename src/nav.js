@@ -14,14 +14,22 @@ export class Grid {
     const n = this.w * this.h;
     this.walk = new Uint8Array(n);
     this.sight = new Uint8Array(n);
+    // 動く歩道の向き（東 +1 / 西 -1）。歩道のない地図では null
+    this.flow = map.some((r) => /[<>]/.test(r)) ? new Int8Array(n) : null;
     for (let y = 0; y < this.h; y++) {
       for (let x = 0; x < this.w; x++) {
         const c = map[y][x];
         this.walk[y * this.w + x] = WALKABLE.has(c) ? 1 : 0;
         this.sight[y * this.w + x] = SIGHT_BLOCK.has(c) ? 1 : 0;
+        if (this.flow && (c === '<' || c === '>')) this.flow[y * this.w + x] = c === '>' ? 1 : -1;
       }
     }
     this.fields = new Map();
+  }
+
+  /** (x,y) のマスで横に dx 動くと、動く歩道の流れに逆らうか */
+  upstream(x, y, dx) {
+    return dx !== 0 && this.flow !== null && this.flow[y * this.w + x] * dx < 0;
   }
 
   at(x, y) {
@@ -38,10 +46,15 @@ export class Grid {
     return this.isWalk(Math.floor(x), Math.floor(z));
   }
 
-  /** (tx,ty) からの歩行距離マップ（4近傍BFS）。キャッシュする */
-  field(tx, ty) {
+  /**
+   * (tx,ty) からの歩行距離マップ（4近傍BFS）。キャッシュする。
+   * 動く歩道は流れの向きにしか進めない扱い（anyDir なら向きを無視：追いかける人は逆走して押し戻される）
+   */
+  field(tx, ty, anyDir = false) {
+    const oneWay = this.flow !== null && !anyDir;
     const key = ty * this.w + tx;
-    let f = this.fields.get(key);
+    const ck = anyDir && this.flow ? key + this.w * this.h : key;
+    let f = this.fields.get(ck);
     if (f) return f;
     f = new Int16Array(this.w * this.h).fill(-1);
     if (!this.isWalk(tx, ty)) return f;
@@ -60,12 +73,14 @@ export class Grid {
         if (!this.isWalk(nx, ny)) continue;
         const j = ny * this.w + nx;
         if (f[j] !== -1) continue;
+        // (nx,ny) から (x,y) へ歩く向きが、どちらかのマスの流れに逆らうならつながない
+        if (oneWay && (this.upstream(nx, ny, -DIRS8[d][0]) || this.upstream(x, y, -DIRS8[d][0]))) continue;
         f[j] = f[i] + 1;
         q[tail++] = j;
       }
     }
     if (this.fields.size > 64) this.fields.clear();
-    this.fields.set(key, f);
+    this.fields.set(ck, f);
     return f;
   }
 
@@ -84,6 +99,7 @@ export class Grid {
       const ny = ty + dy;
       if (!this.isWalk(nx, ny)) continue;
       if (dx !== 0 && dy !== 0 && (!this.isWalk(tx + dx, ty) || !this.isWalk(tx, ty + dy))) continue;
+      if (this.upstream(tx, ty, dx) || this.upstream(nx, ny, dx)) continue;
       const v = field[ny * this.w + nx];
       if (v < 0) continue;
       // 斜めはわずかに優先（なめらかに曲がる）
@@ -151,16 +167,18 @@ export class Grid {
     return !this.traverse(ax, az, bx, bz, (x, y) => this.blocksSight(x, y));
   }
 
-  /** 半径 r の円が a→b を真っすぐ移動できるか */
+  /** 半径 r の円が a→b を真っすぐ移動できるか（動く歩道の逆走は不可） */
   clearPath(ax, az, bx, bz, r = 0.3) {
     const len = Math.hypot(bx - ax, bz - az);
     const n = Math.max(1, Math.ceil(len / 0.3));
+    const sx = Math.sign(bx - ax);
     for (let i = 0; i <= n; i++) {
       const t = i / n;
       const x = ax + (bx - ax) * t;
       const z = az + (bz - az) * t;
       if (!this.isWalkWorld(x - r, z - r) || !this.isWalkWorld(x + r, z - r) ||
           !this.isWalkWorld(x - r, z + r) || !this.isWalkWorld(x + r, z + r)) return false;
+      if (this.upstream(Math.floor(x), Math.floor(z), sx)) return false;
     }
     return true;
   }

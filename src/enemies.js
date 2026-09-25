@@ -3,6 +3,7 @@ import { Character } from './characters.js';
 import { CAST } from './cast.js';
 import { VisionCone, RangeRing } from './effects.js';
 import { clamp, damp, pick, wrapAngle } from './util.js';
+import { NOISE } from './suitcase.js';
 
 const TUNING = {
   senpai: { notice: 3.0, chase: 3.25, chaseMax: 4.2, lose: 8, cooldown: 9 },
@@ -18,6 +19,7 @@ const TUNING = {
   doki: { notice: 4.6, fov: 2.4, wander: 1.4, rush: 5.3, rushMax: 1.9, lose: 9, cooldown: 7 },
   golf: { wander: 0.9, notice: 5.5, range: 2.0, fov: 2.2, windup: 0.8, every: 2.4, cooldown: 7 },
   cleaner: { speed: 1.25 },
+  mimi: { ear: 2.0, walk: 3.0, search: 1.6, spot: 2.8, chase: 4.4, chaseMax: 1.8, lose: 7, cooldown: 8 },
 };
 
 // 濡れた床を走ると転ぶ速さ
@@ -34,7 +36,13 @@ export class Enemy {
   constructor(game, spawn, patrol) {
     this.game = game;
     this.type = spawn.type;
-    this.cfg = CAST[this.type];
+    // セリフ・見た目は CAST → 出現順の variants → ステージごとの lines の順に重ねる
+    const base = CAST[this.type];
+    const n = base.variants?.length || 0;
+    const vi = n ? spawn.index % n : 0;
+    const v = n ? base.variants[vi] : null;
+    this.cfg = { ...base, ...(v || {}), look: v?.look ? { ...base.look, ...v.look } : base.look, ...(game.stage.lines?.[this.type] || {}) };
+    this.face = v?.name ? `${this.type}_${vi}` : this.type; // 顔アイコンのキー
     // 見た目・セリフは type、動き方は kind（別キャラが既存の動きを使い回せる）
     this.kind = this.cfg.behavior || this.type;
     this.tune = { ...TUNING[this.kind], ...(this.cfg.tune || {}) };
@@ -83,10 +91,16 @@ export class Enemy {
       this.swingT = 1 + Math.random() * 2;
     } else if (this.kind === 'cleaner') {
       this.state = 'work';
+    } else if (this.kind === 'mimi') {
+      // 紫の輪：この中なら歩く音も聞こえる
+      this.ring = new RangeRing(game.scene, '#a05fb5', this.tune.ear * NOISE.walk);
+      this.state = 'listen';
+      this.goTo = { x: spawn.x, z: spawn.z };
     } else if (this.kind === 'keiri' || this.kind === 'mtg') {
       this.cone = new VisionCone(game.scene, this.kind === 'keiri' ? '#ff4b3a' : '#ffd23f');
       this.state = this.patrol ? 'patrol' : 'stand';
       if (this.patrol) this.pi = this.nearestWaypoint();
+      this.heardAt = { x: 0, z: 0 };
     } else if (TALKERS.has(this.kind) || this.kind === 'shinjin') {
       this.ring = new RangeRing(game.scene, { senpai: '#f0a23b', warikomi: '#8e6cc7', shinjin: '#3aa56c' }[this.kind], this.tune.notice);
       this.state = 'idle';
@@ -96,6 +110,14 @@ export class Enemy {
     } else {
       this.state = 'idle';
       this.throwT = 0.5 + Math.random();
+    }
+    // 客室のドアの中に隠れている人（物音で出てくる）
+    if (spawn.door != null) {
+      this.door = spawn.door;
+      this.state = 'lurk';
+      this.rearm = 0;
+      this.char.root.visible = false;
+      this.ring?.update(this.pos.x, this.pos.z, 0);
     }
     this.char.root.position.copy(this.pos);
   }
@@ -107,7 +129,10 @@ export class Enemy {
   nearestWaypoint() {
     let bi = 0;
     let bd = Infinity;
+    // 動く歩道の上では、流れの上手にある地点は選ばない（戻れないので）
+    const bv = this.game.belts?.vx(this.pos.x, this.pos.z) || 0;
     this.patrol.forEach((p, i) => {
+      if (bv * (p.x - this.pos.x) < 0) return;
       const d = Math.hypot(p.x - this.pos.x, p.z - this.pos.z);
       if (d < bd) {
         bd = d;
@@ -207,7 +232,8 @@ export class Enemy {
       case 'senpai':
       case 'warikomi': return ['idle', 'notice', 'chase', 'return'].includes(this.state);
       case 'keiri':
-      case 'mtg': return ['patrol', 'stand', 'spotted', 'chase', 'resume'].includes(this.state);
+      case 'mtg': return ['patrol', 'stand', 'spotted', 'chase', 'resume', 'heard'].includes(this.state);
+      case 'mimi': return ['listen', 'go', 'search', 'notice', 'chase', 'return'].includes(this.state);
       case 'kanji':
       case 'zandaka': return this.state === 'guard';
       default: return false;
@@ -226,10 +252,10 @@ export class Enemy {
     else if (this.kind === 'doki' && this.state === 'wander') this.dokiNotice();
   }
 
-  notice() {
+  notice(mark = '！') {
     this.set('notice');
     this.say(pick(Math.random, this.cfg.notice), '', 1.5);
-    this.game.ui.emote(this, '！');
+    this.game.ui.emote(this, mark);
     this.game.audio.notice(this.cfg.voice.freq);
     this.char.play('hop');
     this.char.setMood('surprised');
@@ -281,7 +307,7 @@ export class Enemy {
     else if (this.kind === 'keiri' || this.kind === 'mtg') this.set(this.patrol ? 'resume' : 'stand');
     else if (this.kind === 'doki' || this.kind === 'golf') this.set('wander');
     else if (this.kind === 'kanji' || this.kind === 'zandaka') this.set('guard');
-    else if (this.kind === 'shinjin') this.set('return');
+    else if (this.kind === 'shinjin' || this.kind === 'mimi') this.set('return');
     else this.set('idle');
   }
 
@@ -291,7 +317,7 @@ export class Enemy {
     this.char.setMood('happy');
     if (this.cfg.after) this.say(pick(Math.random, this.cfg.after), '', 1.8);
     this.char.pose = this.kind === 'kanji' ? 'dance' : 'idle';
-    if (TALKERS.has(this.kind)) this.set('return');
+    if (TALKERS.has(this.kind) || this.kind === 'mimi') this.set('return');
     else if (this.kind === 'keiri' || this.kind === 'mtg') this.set(this.patrol ? 'resume' : 'stand');
     else if (this.kind === 'kanji') this.set('guard');
     else if (this.kind === 'doki' || this.kind === 'golf') this.set('wander');
@@ -299,10 +325,98 @@ export class Enemy {
     this.nearMissed = false;
   }
 
+  /** 物音を聞いたとき（壁越しにも届く）。反応したら true */
+  hear(x, z, r, src) {
+    if (this.cool > 0 || this.behaving || this.state === 'lurk') return false;
+    const d = Math.hypot(this.pos.x - x, this.pos.z - z);
+    if (this.kind === 'mimi') return d <= r * this.tune.ear && this.investigate(x, z, src);
+    if (src === 'voice' || d > r) return false;
+    const s = this.state;
+    if (TALKERS.has(this.kind) && (s === 'idle' || s === 'return')) {
+      this.notice('？');
+      if (this.cfg.heardLines) this.say(pick(Math.random, this.cfg.heardLines), '', 1.5);
+    } else if (this.kind === 'doki' && s === 'wander') {
+      this.dokiNotice('？');
+    } else if (this.kind === 'shinjin' && s === 'idle') {
+      this.shinjinNotice('？');
+    } else if (this.kind === 'shorui' && s === 'idle') {
+      this.throwT = 0; // 投げるには見通しが必要なまま
+      this.game.ui.emote(this, '？');
+    } else if ((this.kind === 'mtg' || this.kind === 'keiri') && ['patrol', 'stand', 'look', 'resume'].includes(s)) {
+      this.set('heard');
+      this.heardAt.x = x;
+      this.heardAt.z = z;
+      this.game.ui.emote(this, '？');
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  /** 地獄耳の総務：音のした場所まで確かめに行く */
+  investigate(x, z, src) {
+    const s = this.state;
+    if (s !== 'listen' && s !== 'go' && s !== 'search' && s !== 'return') return false;
+    this.goTo.x = x;
+    this.goTo.z = z;
+    if (s !== 'go') {
+      this.say(pick(Math.random, src === 'voice' ? this.cfg.voiceLines : this.cfg.heardLines), 'mimi', 1.5);
+      this.game.ui.emote(this, '？');
+    }
+    this.set('go');
+    return true;
+  }
+
+  /** 部屋のドアから顔を出す（まだ捕まえない） */
+  peek() {
+    const P = this.player;
+    this.set('peek');
+    this.pos.set(this.home.x, 0, this.home.z);
+    this.vel.x = this.vel.z = 0;
+    this.char.root.position.copy(this.pos);
+    this.char.root.visible = true;
+    this.char.setYaw(Math.atan2(P.pos.x - this.pos.x, P.pos.z - this.pos.z));
+    this.char.setMood('surprised');
+    this.say(pick(Math.random, this.cfg.doorLines || this.cfg.notice), '', 1.4);
+  }
+
+  /** 部屋に戻ってドアを閉める */
+  hide() {
+    this.set('lurk');
+    this.rearm = 6;
+    this.vel.x = this.vel.z = 0;
+    this.char.root.visible = false;
+    this.ring?.update(this.pos.x, this.pos.z, 0);
+    this.game.world.closeDoor(this.door);
+  }
+
+  /** ばらまき土産を受け取って、しばらく大人しくなる */
+  calm(sec) {
+    this.cool = Math.max(this.cool, sec);
+    this.char.setMood('happy');
+    const s = this.state;
+    if (s === 'held' || s === 'slipped' || s === 'trip') return;
+    if (TALKERS.has(this.kind) || this.kind === 'shinjin' || this.kind === 'mimi') {
+      if (s !== 'idle' && s !== 'listen') this.set('return');
+    } else if (this.kind === 'keiri' || this.kind === 'mtg') {
+      if (s === 'spotted' || s === 'chase' || s === 'heard') {
+        this.set(this.patrol ? 'resume' : 'stand');
+        if (this.patrol) this.pi = this.nearestWaypoint();
+      }
+    } else if (this.kind === 'doki') {
+      this.set('wander');
+    }
+  }
+
   update(dt) {
     const c = this.char;
     this.t += dt;
     this.cool = Math.max(0, this.cool - dt);
+    // 部屋に隠れている間は何もしない（見えない・捕まえない・音も聞かない）
+    if (this.state === 'lurk') {
+      this.rearm = Math.max(0, this.rearm - dt);
+      return;
+    }
     if (this.cool <= 0 && c.mood === 'happy' && this.kind !== 'kanji') c.setMood('normal');
     const hidden = this.game.playerHidden || this.onPhone;
     const dist = this.distToPlayer();
@@ -392,16 +506,25 @@ export class Enemy {
       case 'doki':
         pose = this.updateDoki(dt, dist, hidden);
         break;
+      case 'mimi':
+        pose = this.updateMimi(dt, dist, hidden);
+        break;
       default:
         break;
     }
     if (this.state !== 'chase') this.nearMissed = false;
+    // 動く歩道に運ばれる
+    const bv = this.game.belts?.vx(this.pos.x, this.pos.z);
+    if (bv) {
+      this.pos.x += bv * dt;
+      this.game.world.grid.resolveCircle(this.pos, this.r);
+    }
 
     if (c.pose !== 'down') c.pose = pose;
     c.root.position.set(this.pos.x, 0, this.pos.z);
     const spd = Math.hypot(this.vel.x, this.vel.z);
     c.speed = spd;
-    if (spd > 0.25 && this.state !== 'notice' && this.state !== 'spotted') c.faceDir(this.vel.x, this.vel.z);
+    if (spd > 0.25 && this.state !== 'notice' && this.state !== 'spotted' && this.state !== 'heard') c.faceDir(this.vel.x, this.vel.z);
     c.update(dt);
   }
 
@@ -444,9 +567,21 @@ export class Enemy {
       case 'return': {
         this.ring?.update(this.pos.x, this.pos.z, 0);
         const d = this.moveTo(this.home.x, this.home.z, 1.7, dt);
-        if (d < 0.15) this.set('idle');
+        if (d < 0.15) {
+          if (this.door != null) this.hide();
+          else this.set('idle');
+        }
         return 'idle';
       }
+      case 'peek':
+        // ドアから顔を出したところ。隠れていればあきらめて部屋に戻る
+        this.stop(dt);
+        this.facePlayer();
+        if (this.t > 0.45) {
+          if (hidden) this.set('return');
+          else this.notice();
+        }
+        return 'look';
       default:
         return 'idle';
     }
@@ -531,10 +666,18 @@ export class Enemy {
         if (d < 0.25) this.set(this.patrol ? 'patrol' : 'stand');
         break;
       }
+      case 'heard':
+        // 物音のした方を振り向く（視界も一緒に回る）
+        this.stop(dt);
+        c.targetYaw = Math.atan2(this.heardAt.x - this.pos.x, this.heardAt.z - this.pos.z);
+        c.headYaw = 0;
+        intensity = 1.2;
+        if (this.t > 1.0) this.set(this.patrol ? 'resume' : 'stand');
+        break;
       default:
         break;
     }
-    if (!hidden && this.cool <= 0 && ['patrol', 'stand', 'look', 'resume'].includes(this.state)) {
+    if (!hidden && this.cool <= 0 && ['patrol', 'stand', 'look', 'resume', 'heard'].includes(this.state)) {
       const yaw = this.char.yaw + c.head.rotation.y;
       if (this.sees(T.range, T.fov, yaw) || dist < 1.0) this.spot();
     }
@@ -595,6 +738,15 @@ export class Enemy {
   }
 
   // --- 新人くん -------------------------------------------------------------
+  shinjinNotice(mark = '！') {
+    this.set('notice');
+    this.say(pick(Math.random, this.cfg.notice), 'shinjin', 1.4);
+    this.game.ui.emote(this, mark);
+    this.game.audio.notice(this.cfg.voice.freq);
+    this.char.play('jump');
+    this.char.setMood('happy');
+  }
+
   updateShinjin(dt, dist, hidden) {
     const T = this.tune;
     const c = this.char;
@@ -604,14 +756,7 @@ export class Enemy {
         this.stop(dt);
         c.targetYaw = this.homeYaw;
         this.ring?.update(this.pos.x, this.pos.z, this.cool > 0 ? 0 : clamp(1 - (dist - T.notice) / 4, 0, 1) * 0.5);
-        if (!hidden && this.cool <= 0 && this.sees(T.notice, Math.PI * 2, 0)) {
-          this.set('notice');
-          this.say(pick(Math.random, this.cfg.notice), 'shinjin', 1.4);
-          this.game.ui.emote(this, '！');
-          this.game.audio.notice(this.cfg.voice.freq);
-          c.play('jump');
-          c.setMood('happy');
-        }
+        if (!hidden && this.cool <= 0 && this.sees(T.notice, Math.PI * 2, 0)) this.shinjinNotice();
         return 'idle';
       case 'notice':
         this.stop(dt);
@@ -813,10 +958,10 @@ export class Enemy {
   }
 
   // --- 充電器の同期 -----------------------------------------------------------
-  dokiNotice() {
+  dokiNotice(mark = '！') {
     this.set('notice');
     this.say(pick(Math.random, this.cfg.notice), 'doki', 1.5);
-    this.game.ui.emote(this, '！');
+    this.game.ui.emote(this, mark);
     this.game.audio.notice(this.cfg.voice.freq);
     this.char.play('hop');
     this.char.setMood('surprised');
@@ -871,9 +1016,77 @@ export class Enemy {
     }
   }
 
+  // --- 地獄耳の総務 -----------------------------------------------------------
+  mimiSpot() {
+    this.set('notice');
+    this.say(pick(Math.random, this.cfg.notice), 'mimi', 1.5);
+    this.game.ui.emote(this, '！');
+    this.game.audio.notice(this.cfg.voice.freq);
+    this.char.play('hop');
+    this.char.setMood('surprised');
+  }
+
+  updateMimi(dt, dist, hidden) {
+    const T = this.tune;
+    const c = this.char;
+    this.ring.update(this.pos.x, this.pos.z, dist < 9 && this.cool <= 0 && (this.state === 'listen' || this.state === 'search') ? 0.3 : 0);
+    switch (this.state) {
+      case 'listen':
+        // スマホに目を落としたまま（目では気づかない）
+        this.stop(dt);
+        c.targetYaw = this.homeYaw;
+        c.headYaw = 0;
+        return 'scroll';
+      case 'go': {
+        const d = this.moveTo(this.goTo.x, this.goTo.z, T.walk, dt);
+        c.headYaw = Math.sin(this.t * 4) * 0.3;
+        if (!hidden && this.sees(T.spot, Math.PI * 2, 0)) this.mimiSpot();
+        else if (d < 0.35 || this.t > 4) this.set('search');
+        return 'idle';
+      }
+      case 'search':
+        this.stop(dt);
+        c.headYaw = Math.sin(this.t * 3) * 1.0;
+        if (!hidden && this.sees(T.spot, Math.PI * 2, 0)) this.mimiSpot();
+        else if (this.t > T.search) {
+          this.say(pick(Math.random, this.cfg.lostLines), 'mimi', 1.4);
+          this.set('return');
+        }
+        return 'look';
+      case 'notice':
+        // 驚きながらも、そのまま詰め寄ってくる（すれ違いざまにつかまる）
+        this.moveTo(this.player.pos.x, this.player.pos.z, T.chase, dt);
+        this.facePlayer();
+        if (this.t > 0.3) {
+          this.set('chase');
+          c.setMood('happy');
+        }
+        return 'shock';
+      case 'chase':
+        this.moveTo(this.player.pos.x, this.player.pos.z, T.chase, dt, this.game.playerField);
+        c.headYaw = 0;
+        if (hidden || this.t > T.chaseMax || dist > T.lose) {
+          this.say(this.giveupLine(), 'mimi', 1.6);
+          c.setMood('normal');
+          this.cool = 2.5;
+          this.set('return');
+        }
+        return 'reach';
+      case 'return': {
+        const d = this.moveTo(this.home.x, this.home.z, 2.0, dt);
+        c.headYaw = 0;
+        if (d < 0.15) this.set('listen');
+        return 'idle';
+      }
+      default:
+        return 'idle';
+    }
+  }
+
   /** タイトル画面の背景用：巡回だけする */
   demoUpdate(dt) {
     const c = this.char;
+    if (this.state === 'lurk') return;
     if (this.patrol && (this.kind === 'keiri' || this.kind === 'mtg' || this.kind === 'shacho')) {
       const wp = this.patrol[this.pi];
       const d = this.moveTo(wp.x, wp.z, this.tune.patrol, dt);
@@ -885,12 +1098,13 @@ export class Enemy {
     }
     if (this.cone) this.cone.visible = false;
     this.ring?.update(this.pos.x, this.pos.z, 0);
-    c.pose = this.kind === 'kanji' ? 'dance' : 'idle';
+    c.pose = this.kind === 'kanji' ? 'dance' : this.kind === 'mimi' ? 'scroll' : 'idle';
     this.idle(dt);
   }
 
   /** 位置の反映とアニメーションだけ（会話中など） */
   idle(dt) {
+    if (this.state === 'lurk') return;
     const c = this.char;
     c.root.position.set(this.pos.x, 0, this.pos.z);
     const spd = Math.hypot(this.vel.x, this.vel.z);

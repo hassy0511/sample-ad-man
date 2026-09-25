@@ -140,6 +140,7 @@ export class World {
     this.elevators = [];
     this.exitDoors = [];
     this.shredders = [];
+    this.doors = [];
     this.spawns = { player: null, goal: null, enemies: [], boss: null, pickups: [], desks: [] };
     this.W = this.grid.w;
     this.H = this.grid.h;
@@ -172,7 +173,15 @@ export class World {
         else if (c === 'K') this.spawns.fetch = { x: x + 0.5, z: y + 0.5 };
         else if (c === '0') (this.spawns.rooms ||= []).push({ x: x + 0.5, z: y + 0.5 });
         else if (ITEM_CODES[c]) (this.spawns.items ||= []).push({ id: ITEM_CODES[c], x: x + 0.5, z: y + 0.5 });
-        else if (ENEMY_CODES[c]) {
+        else if (c === '[') {
+          // 客室のドア。中の人は手前の床（下 → 上 → 右 → 左）に隠れている
+          const i = this.doors.length;
+          const [dx, dz] = [[0, 1], [0, -1], [1, 0], [-1, 0]].find(([ax, az]) => grid.isWalk(x + ax, y + az)) || [0, 1];
+          const fx = x + dx + 0.5;
+          const fz = y + dz + 0.5;
+          this.doors.push({ x: x + 0.5, z: y + 0.5, fx, fz, dx, dz, pivot: null, open: 0, target: 0 });
+          this.spawns.enemies.push({ code: '[', type: this.stage.doors?.[i] || 'yukata', x: fx, z: fz, index: i, door: i });
+        } else if (ENEMY_CODES[c]) {
           order[c] = order[c] || 0;
           this.spawns.enemies.push({ code: c, type: ENEMY_CODES[c], x: x + 0.5, z: y + 0.5, index: order[c]++ });
         }
@@ -207,7 +216,7 @@ export class World {
   }
 
   buildFloor() {
-    const aoSet = new Set(['#', 'k', 'x', 'v', 'c', 'e', 'D', 'h', 'g', 's', 'w']);
+    const aoSet = new Set(['#', 'k', 'x', 'v', 'c', 'e', 'D', 'h', 'g', 's', 'w', '[', ']']);
     const tex = this.track(floorTexture(this.grid, this.floorType, (x, y) => aoSet.has(this.grid.at(x, y))));
     tex.anisotropy = this.maxAniso;
     const mat = this.track(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0 }));
@@ -299,6 +308,16 @@ export class World {
             break;
           case 'g':
             this.gate(B, x, y);
+            break;
+          case ']':
+            this.trainCar(B, x, y);
+            break;
+          case '[':
+            this.roomDoor(B, x, y);
+            break;
+          case '<':
+          case '>':
+            this.beltEdge(B, x, y);
             break;
           case 'm':
           case 'B':
@@ -476,23 +495,83 @@ export class World {
     const horiz = wl(-1, 0) || wl(1, 0);
     const vert = wl(0, -1) || wl(0, 1);
     B.at(x + 0.5, y + 0.5);
+    // 低い手すり（長いガラスのトンネルで中が見えなくならないように）
+    const low = this.stage.lowGlass;
+    const postY = low ? 0.52 : 1.12;
+    const postH = low ? 1.04 : 2.2;
     const seg = (yaw, len, off) => {
       const saved = B.base;
       B.base = mulM(saved, M(0, 0, 0, 0, yaw, 0));
       B.box('metal', '#5a616d', off, 0.04, 0, len, 0.08, 0.1);
-      B.box('metal', '#5a616d', off, 2.2, 0, len, 0.06, 0.1);
-      B.box('glass', '#ffffff', off, 1.12, 0, len, 2.1, 0.03);
-      B.box('frost', '#ffffff', off, 1.15, 0, len, 0.26, 0.036);
+      if (low) {
+        B.box('glass', '#ffffff', off, 0.54, 0, len, 0.92, 0.03);
+        B.box('metal', '#1b1d22', off, 1.03, 0, len, 0.06, 0.08);
+      } else {
+        B.box('metal', '#5a616d', off, 2.2, 0, len, 0.06, 0.1);
+        B.box('glass', '#ffffff', off, 1.12, 0, len, 2.1, 0.03);
+        B.box('frost', '#ffffff', off, 1.15, 0, len, 0.26, 0.036);
+      }
       B.base = saved;
     };
     if (horiz || !vert) {
       seg(0, 1, 0);
-      B.box('metal', '#5a616d', -0.5, 1.12, 0, 0.05, 2.2, 0.08);
+      B.box('metal', '#5a616d', -0.5, postY, 0, 0.05, postH, 0.08);
     }
     if (vert) {
       seg(Math.PI / 2, 1, 0);
-      B.box('metal', '#5a616d', 0, 1.12, -0.5, 0.08, 2.2, 0.05);
+      B.box('metal', '#5a616d', 0, postY, -0.5, 0.08, postH, 0.05);
     }
+  }
+
+  /** 新幹線の車体（ホーム側に青帯と窓、stage.trainDoors の位置にドア） */
+  trainCar(B, x, y) {
+    B.at(x + 0.5, y + 0.5);
+    B.box('gloss', '#f4f6f8', 0, 0.95, 0, 1, 1.5, 1);
+    B.box('matte', '#7d858f', 0, 0.1, 0, 0.9, 0.2, 0.9);
+    B.box('gloss', '#e9edf1', 0, 1.74, 0, 1, 0.08, 0.96);
+    if (!this.grid.isWalk(x, y + 1)) return;
+    B.box('gloss', '#1f4fa8', 0, 0.62, 0.505, 1, 0.12, 0.02);
+    if (this.stage.trainDoors?.includes(x)) {
+      B.box('gloss', '#dfe4ea', 0, 0.92, 0.515, 0.7, 1.3, 0.03);
+      B.box('gloss', '#2a3848', 0, 1.25, 0.532, 0.3, 0.34, 0.01);
+      B.box('matte', '#9aa3ae', 0, 0.92, 0.532, 0.012, 1.26, 0.01);
+    } else {
+      B.box('gloss', '#2a3848', 0, 1.2, 0.505, 1, 0.34, 0.02);
+    }
+  }
+
+  /** 客室のドア：内壁と同じ土台に、木の枠・ルームプレート・ドアの下から漏れる灯り。ドア板は動く */
+  roomDoor(B, x, y) {
+    const d = this.doors.find((o) => o.x === x + 0.5 && o.z === y + 0.5);
+    const yaw = Math.atan2(d.dx, d.dz);
+    B.at(x + 0.5, y + 0.5, yaw);
+    B.box('matte', PAL.wall, 0, 0.5, 0, 1, 1.0, 1);
+    B.box('matte', PAL.wallCap, 0, 1.015, 0, 1.0, 0.03, 1.0);
+    B.box('matte', PAL.base, 0, 0.045, 0, 1.03, 0.09, 1.03);
+    for (const sx of [-0.43, 0.43]) B.box('matte', '#6b4a33', sx, 0.48, 0.515, 0.07, 0.96, 0.04);
+    B.box('matte', '#6b4a33', 0, 0.965, 0.515, 0.93, 0.05, 0.04);
+    B.box('gloss', '#d4af37', 0, 0.965, 0.54, 0.24, 0.045, 0.012);
+    B.box('glow', '#ffcf8a', 0, 0.01, 0.53, 0.7, 0.02, 0.06);
+    // ドア板（蝶番は廊下側の面の端。ジオメトリとマテリアルは共有）
+    this.doorGeo ??= this.track(new THREE.BoxGeometry(0.78, 0.92, 0.05).translate(0.39, 0.46, 0.025));
+    this.doorMat ??= this.track(new THREE.MeshStandardMaterial({ color: '#8a6242', roughness: 0.55 }));
+    const pivot = new THREE.Group();
+    pivot.position.set(x + 0.5 + d.dx * 0.505 - Math.cos(yaw) * 0.39, 0, y + 0.5 + d.dz * 0.505 + Math.sin(yaw) * 0.39);
+    pivot.rotation.y = yaw;
+    const panel = new THREE.Mesh(this.doorGeo, this.doorMat);
+    panel.castShadow = true;
+    pivot.add(panel);
+    this.group.add(pivot);
+    d.pivot = pivot;
+    d.yaw = yaw;
+  }
+
+  /** 動く歩道の縁（踏み板は belts.js）：両脇の金属スカートと、乗り降り口の黄色いくし板 */
+  beltEdge(B, x, y) {
+    const belt = (dx, dy) => '<>'.includes(this.grid.at(x + dx, y + dy));
+    B.at(x + 0.5, y + 0.5);
+    for (const sz of [-1, 1]) if (!belt(0, sz)) B.box('metal', '#8a919c', 0, 0.06, sz * 0.48, 1, 0.12, 0.04);
+    for (const sx of [-1, 1]) if (!belt(sx, 0)) B.box('matte', '#f2c14e', sx * 0.45, 0.03, 0, 0.1, 0.05, 0.94);
   }
 
   desk(B, x, y) {
@@ -922,7 +1001,7 @@ export class World {
   clock() {
     const x = (this.stage.clockX ?? 20) + 0.5;
     const group = new THREE.Group();
-    group.position.set(x, 2.55, 1.35);
+    group.position.set(x, 2.55, this.stage.clockZ ?? 1.35);
     const face = new THREE.Mesh(this.track(new THREE.CircleGeometry(0.36, 40)),
       this.track(new THREE.MeshStandardMaterial({ map: this.track(clockTexture()), roughness: 0.4 })));
     face.position.z = 0.035;
@@ -1087,6 +1166,19 @@ export class World {
       d.open += (d.target - d.open) * Math.min(1, dt * 3);
       d.mesh.position.z = d.baseZ + d.dir * d.open * 0.85;
     }
+    for (const d of this.doors) {
+      if (!d.pivot) continue;
+      d.open += (d.target - d.open) * Math.min(1, dt * 6);
+      d.pivot.rotation.y = d.yaw - d.open * 1.35;
+    }
+  }
+
+  openDoor(i) {
+    this.doors[i].target = 1;
+  }
+
+  closeDoor(i) {
+    this.doors[i].target = 0;
   }
 
   nearestElevator(x, z) {

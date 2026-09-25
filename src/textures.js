@@ -617,6 +617,29 @@ export function clockTexture() {
   return toTex(c);
 }
 
+/** 動く歩道の踏み板（1m で1模様。offset を動かして流す） */
+export function beltTexture() {
+  const [c, g] = canvas(64, 64);
+  g.fillStyle = '#3a3e46';
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  for (let y = 4; y < 64; y += 6) g.fillRect(0, y, 64, 2);
+  g.fillStyle = 'rgba(255,255,255,0.08)';
+  for (let y = 6; y < 64; y += 6) g.fillRect(0, y, 64, 1);
+  g.fillStyle = 'rgba(0,0,0,0.45)';
+  g.fillRect(62, 0, 2, 64);
+  g.strokeStyle = '#e8edf3';
+  g.lineWidth = 7;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.moveTo(22, 16);
+  g.lineTo(40, 32);
+  g.lineTo(22, 48);
+  g.stroke();
+  return toTex(c, { repeat: true });
+}
+
 export function beamTexture() {
   const [c, g] = canvas(4, 128);
   const grd = g.createLinearGradient(0, 0, 0, 128);

@@ -11,6 +11,7 @@ const ITEM_PROPS = {
   folder: { left: 'folder' },
   wallet: { right: 'wallet' },
   bag: { left: 'bag', right: 'penlight' },
+  trip: { left: 'bag' }, // 右手はキャリーケースの持ち手
 };
 
 export const DASH_TIME = 0.2;
@@ -47,6 +48,7 @@ export class Player {
     this.umbrellaT = 0;
     this.boostT = 0;
     this.slipT = 0;
+    this.noiseT = 0;
     this.onWet = false;
     this.bowing = false;
     this.facing = new THREE.Vector2(0, -1);
@@ -133,6 +135,7 @@ export class Player {
     this.ghostT = 0;
     this.game.fx.dust(this.pos.x, this.pos.z, 8, '#f1f4f8', 1.2);
     this.game.audio.dash();
+    this.game.onPlayerDash?.();
   }
 
   /** カバンに入れる。いっぱいなら false */
@@ -168,6 +171,8 @@ export class Player {
     } else if (id === 'umbrella') {
       this.umbrellaT = 5;
       this.game.ui.bubble(this, '（傘で顔を隠す）', 'player', 1.4);
+    } else if (id === 'baramaki') {
+      this.game.scatterGifts();
     }
     this.game.audio.sparkle();
     this.game.onItemsChanged();
@@ -273,6 +278,9 @@ export class Player {
     if (!this.frozen) {
       this.pos.x += this.vel.x * dt;
       this.pos.z += this.vel.y * dt;
+      // 動く歩道に運ばれる
+      const bv = this.game.belts?.vx(this.pos.x, this.pos.z);
+      if (bv) this.pos.x += bv * dt;
       this.game.world.grid.resolveCircle(this.pos, this.r);
     }
     c.root.position.set(this.pos.x, 0, this.pos.z);
@@ -297,8 +305,10 @@ export class Player {
     this.ring.position.set(this.pos.x, 0.04, this.pos.z);
     this.dot.position.set(this.pos.x, 0.04, this.pos.z);
     const ready = this.dashReady;
-    this.ringMat.color.set(ready ? '#8fd3ff' : '#9aa3b2');
-    this.ringMat.opacity = ready ? 0.8 : 0.35;
+    // キャリーケースが音を立てた瞬間はオレンジ
+    this.noiseT = Math.max(0, this.noiseT - dt);
+    this.ringMat.color.set(this.noiseT > 0 ? '#ff9f1c' : ready ? '#8fd3ff' : '#9aa3b2');
+    this.ringMat.opacity = this.noiseT > 0 ? 0.9 : ready ? 0.8 : 0.35;
     this.ring.scale.setScalar(this.dashT > 0 ? 1.3 : 1);
     // 無敵中は点滅
     c.root.visible = this.frozen || !(this.invulnT > 0.12 && this.dashT <= 0 && Math.floor(this.invulnT * 16) % 2 === 0);

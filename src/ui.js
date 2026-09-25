@@ -51,6 +51,11 @@ export class UI {
   title(stages, chapters, current, best, onChapter, onPick) {
     const tabs = $('chapter-tabs');
     const wrap = $('stage-notes');
+    // 選んでいる章のタブが見えるように横スクロール（非表示の間は位置が取れない）
+    const scrollTab = () => {
+      const on = tabs.querySelector('.on');
+      if (on) tabs.scrollLeft = Math.max(0, on.offsetLeft - tabs.offsetLeft - 24);
+    };
     const render = (ch) => {
       tabs.innerHTML = '';
       for (const c of chapters) {
@@ -68,8 +73,7 @@ export class UI {
         });
         tabs.appendChild(t);
       }
-      const on = tabs.querySelector('.on');
-      if (on) tabs.scrollLeft = Math.max(0, on.offsetLeft - tabs.offsetLeft - 24);
+      scrollTab();
       wrap.innerHTML = '';
       stages.forEach((st, i) => {
         if (st.chapter !== ch) return;
@@ -99,6 +103,7 @@ export class UI {
       list.appendChild(li);
     }
     this.show('screen-title');
+    scrollTab();
     setTimeout(() => wrap.querySelector('.note')?.focus({ preventScroll: true }), 50);
   }
 
@@ -256,6 +261,13 @@ export class UI {
     $('gp-label').textContent = text;
   }
 
+  /** HUD の下の帯（発車メロディなど）。null で消す */
+  banner(text) {
+    const el = $('banner');
+    el.hidden = !text;
+    if (text) el.textContent = text;
+  }
+
   /** 印刷の進み具合（entity の頭上に表示。null で消す） */
   setProgress(entity, pct = 0, label = '') {
     if (!this.progEl) {
@@ -317,7 +329,7 @@ export class UI {
 
   // --- ワールド上の吹き出し ------------------------------------------------
   bubble(entity, text, style = '', dur = 1.6) {
-    const old = this.anchored.find((a) => a.entity === entity && a.kind === 'bubble');
+    const old = this.anchored.find((a) => !a.dead && a.entity === entity && a.kind === 'bubble');
     if (old) this.remove(old);
     const el = document.createElement('div');
     el.className = `bubble ${style}`;

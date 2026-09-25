@@ -214,6 +214,20 @@ export class Audio {
     });
   }
   countdown(last) { this.tone(last ? 1320 : 880, last ? 0.4 : 0.12, { type: 'square', vol: 0.08, filter: 3000 }); }
+  /** キャリーケースのガラガラ（big はダッシュ） */
+  rattle(big) {
+    for (let i = 0; i < (big ? 3 : 2); i++) this.noise(0.07, { freq: 320 + Math.random() * 80, q: 2.5, vol: big ? 0.18 : 0.05, delay: i * 0.08 });
+  }
+  /** ほかのホームの発車メロディ */
+  melody(dur = 3.5) {
+    const seq = [76, 79, 84, 83, 79, 76];
+    const reps = Math.max(1, Math.floor(dur / (seq.length * 0.28)));
+    for (let r = 0; r < reps; r++) seq.forEach((n, i) => this.tone(NOTE(n), 0.26, { type: 'triangle', vol: 0.07, delay: (r * seq.length + i) * 0.28 }));
+  }
+  door() {
+    this.noise(0.12, { freq: 1400, q: 3, vol: 0.18 });
+    this.tone(220, 0.1, { type: 'square', vol: 0.06, filter: 1600, delay: 0.05 });
+  }
 
   // --- BGM -----------------------------------------------------------------
   startMusic(style = 'play', tempo = 112) {
