@@ -2517,7 +2517,6 @@ class Game {
     this.ui.toast(this.stage.goalDone, 'stamp-toast');
     this.audio.clear();
     this.audio.stopMusic();
-    this.celebrating = true;
     setTimeout(() => this.finish(true), delay * 1000 + 500);
   }
 

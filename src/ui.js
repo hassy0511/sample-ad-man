@@ -56,6 +56,12 @@ export class UI {
       const on = tabs.querySelector('.on');
       if (on) tabs.scrollLeft = Math.max(0, on.offsetLeft - tabs.offsetLeft - 24);
     };
+    // マウスホイールの縦回転でも横にスクロールできるように
+    tabs.onwheel = (e) => {
+      if (tabs.scrollWidth <= tabs.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      tabs.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
     const render = (ch) => {
       tabs.innerHTML = '';
       for (const c of chapters) {
@@ -97,6 +103,7 @@ export class UI {
     for (const [key, c] of Object.entries(CAST)) {
       const li = document.createElement('li');
       const known = !!this.game.stats?.met[key];
+      li.title = known ? c.nick : '？？？';
       li.innerHTML = known
         ? `<img src="${this.portraits[key] || ''}" alt="" style="--c:${c.tint}33"><span>${c.nick}</span>`
         : `<img src="${this.portraits[key] || ''}" alt="" class="silhouette"><span>？？？</span>`;
