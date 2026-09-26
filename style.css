@@ -1040,6 +1040,21 @@ kbd {
 .bubble.bureiko { background: #fff0ee; border-color: #a3231f; box-shadow: 0 3px 0 #a3231f; }
 .bubble.bureiko::after { border-color: #a3231f; }
 @media (max-width: 640px) { .hud-ally { font-size: 0; padding: 0 6px; } }
+/* 第8章：同行者のチップ・同行カード・吹き出し */
+/* 右上の列に入れると時計に重なるので、列の下に出す */
+.hud-follow { position: absolute; top: calc(100% + 8px); right: 0; height: 36px; padding: 0 12px; font-family: var(--ui); font-weight: 800; font-size: 0.8rem; white-space: nowrap; background: #eaf2fb; }
+.hud-follow.busy { background: #fff3b0; animation: follow-blink 0.9s ease-in-out infinite; }
+.hud-follow.okuri { background: #ffeef2; color: #a3154d; }
+@keyframes follow-blink { 50% { background: #ffe066; } }
+@media (max-width: 640px) { .hud-follow { height: 32px; font-size: 0.7rem; padding: 0 10px; } }
+.follow-card { border-color: #2c5d9a; background: #eef4fb; }
+.follow-card b em { background: #4b8fd6; }
+.bubble.okuri { background: #ffeef2; border-color: #c2185b; box-shadow: 0 3px 0 #c2185b; }
+.bubble.okuri::after { border-color: #c2185b; }
+.bubble.kounin { background: #eaf2fb; border-color: #2c5d9a; box-shadow: 0 3px 0 #2c5d9a; }
+.bubble.kounin::after { border-color: #2c5d9a; }
+.bubble.daisha { background: #e6f0fa; border-color: #1f4f7a; box-shadow: 0 3px 0 #1f4f7a; }
+.bubble.daisha::after { border-color: #1f4f7a; }
 
 /* --------------------------------------------------------------- 印刷の進み具合 */
 .progress-tag {

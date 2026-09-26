@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { STAGES, CHAPTERS } from './levels.js';
-import { CAST, BOSS, PLAYER_LOOK, GOAL_NPC, RALLY_REJECT, ALLY, COPIER } from './cast.js';
-import { World } from './world.js';
+import { CAST, BOSS, PLAYER_LOOK, GOAL_NPC, RALLY_REJECT, ALLY, COPIER, SUCCESSOR, DAISHA, KOUNIN_REACT } from './cast.js';
+import { World, boxPileGeometry } from './world.js';
 import { Player } from './player.js';
 import { Enemy } from './enemies.js';
 import { Character, renderPortraits } from './characters.js';
@@ -18,14 +18,25 @@ import { Traffic } from './traffic.js';
 import { Weather } from './rain.js';
 import { Suitcase } from './suitcase.js';
 import { Belts } from './belts.js';
+import { Trail, Follower } from './trail.js';
 import { clamp, damp, lerp, smooth, pick, textTexture } from './util.js';
 
 const RANK_ORDER = ['C', 'B', 'A', 'S'];
 const PITCH = 0.93;
-const TEMPO = { 1: 108, 2: 116, 3: 124, 13: 112, 14: 120, 15: 128, 16: 120, 17: 128, 18: 108, 19: 120, 20: 112, 21: 130 };
+const TEMPO = { 1: 108, 2: 116, 3: 124, 13: 112, 14: 120, 15: 128, 16: 120, 17: 128, 18: 108, 19: 120, 20: 112, 21: 130, 22: 112, 23: 118, 24: 128 };
 // 行列に巻き込める人の動き方（社長・書類おじさん・清掃員・ティッシュ配りなどは巻き込めない）
 const ABSORB = new Set(['senpai', 'warikomi', 'doki', 'shinjin', 'kanji', 'mtg', 'keiri']);
 const _dashDir = new THREE.Vector2();
+// 第8章：淀川さんがあいさつする人（動き方と、そのときの状態）。深川さんはオリエンテーション
+const GREETABLE = new Set(['senpai', 'warikomi', 'mtg', 'keiri', 'shorui', 'doki', 'shinjin']);
+const CALM = new Set(['idle', 'patrol', 'stand', 'look', 'wander']);
+const ORIENT_FROM = new Set(['idle', 'notice', 'chase', 'return']);
+// 台車ではね飛ばせない人（社長・通せんぼ・清掃員・ティッシュ配り・お見送り隊・行列）
+const KNOCK_SKIP = new Set(['shacho', 'kanji', 'zandaka', 'cleaner', 'handout', 'okuri', 'conga']);
+const FOLLOW_TEXT = { follow: '淀川さん 同行中', greet: 'あいさつ中…', memo: 'メモ中…', orient: 'オリエンテーション中…', done: '淀川さん 同行中' };
+const NUMS = '①②③④⑤';
+const BOX_LINES = ['ドサッ！（中身：3年分の割り箸）', 'ドサッ！（中身：謎のトロフィー）', 'ドサッ！（中身：3年前のカレンダー）', 'ドサッ！（中身：大量のノベルティ）'];
+const _tp = { x: 0, z: 0, dx: 0, dz: 1, gap: 0 };
 
 class Game {
   constructor() {
@@ -141,7 +152,7 @@ class Game {
   }
 
   async boot() {
-    const sample = '部長大河原営業課経理部会議室エレベーター出口シュレッダー至急ブレスト夏キャンペーン今期売上認知バズ広告賞〆切は守るもの社内標語第回最優秀を飲みほせ';
+    const sample = '部長大河原営業課経理部会議室エレベーター出口シュレッダー至急ブレスト夏キャンペーン今期売上認知バズ広告賞〆切は守るもの社内標語第回最優秀を飲みほせ特命プロジェクト室人事部総務経営企画引継済給湯室祝栄転寄せ書き花道熱海棚ファイルコピー機取引先①②③・ご5階（）';
     const fonts = Promise.all([
       document.fonts.load('800 40px "M PLUS Rounded 1c"', sample),
       document.fonts.load('40px "Dela Gothic One"', 'SALEGOLD〆切夏を飲みほせTHINKBIG50%'),
@@ -156,6 +167,9 @@ class Game {
     looks.ally = ALLY.look;
     looks.judge = GOAL_NPC.judge.look;
     looks.jomu = GOAL_NPC.jomu.look;
+    for (const [k, v] of Object.entries(GOAL_NPC)) looks[k] ??= v.look;
+    looks.successor = SUCCESSOR.look;
+    looks.daisha = DAISHA.look;
     looks.player = PLAYER_LOOK;
     try {
       this.ui.portraits = renderPortraits(looks);
@@ -191,6 +205,25 @@ class Game {
     const sp = this.world.spawns.player;
     this.player.place(sp.x, sp.z, this.initialYaw(sp));
 
+    // 足あと（第8章）：同行者か、足あとを追うお見送り隊がいるステージ
+    this.trail = null;
+    this.cart = null;
+    this.successor = null;
+    const T0 = this.world.spawns.follower;
+    if (!demo && (stage.follower || this.world.spawns.enemies.some((e) => e.type === 'okuri'))) {
+      this.trail = new Trail(this, stage.trailColor);
+      if (T0) this.trail.reset(T0.x, T0.z, sp.x, sp.z);
+      else this.trail.reset(sp.x, sp.z);
+      if (stage.follower === 'daisha') this.cart = new Follower(this, 'daisha');
+      else if (stage.follower === 'successor') this.successor = new Follower(this, 'successor');
+    }
+    this.greetQ = [];
+    this.okuriN = 0;
+    this.okuriShown = 0;
+    this.okuriHype = false;
+    this.okuriShoutT = 1;
+    this.okuriPhone = -1;
+
     const count = {};
     this.enemies = this.world.spawns.enemies.map((s) => {
       count[s.code] = count[s.code] || 0;
@@ -199,12 +232,13 @@ class Game {
     });
     // 行列（先頭は Enemy、列の本体は Conga）
     this.congas = this.enemies.filter((e) => e.conga).map((e) => e.conga);
+    this.okuriTune = this.enemies.find((e) => e.kind === 'okuri')?.tune || null;
     this.lure = null;
     this.squeezed = false;
     this.congaHinted = false;
 
     this.boss = null;
-    if ((stage.goalType === 'boss' || stage.goalType === 'desk') && this.world.spawns.boss) {
+    if ((stage.goalType === 'boss' || stage.goalType === 'desk' || stage.goalType === 'handover') && this.world.spawns.boss) {
       this.goalNpc = GOAL_NPC[stage.goalNpc || 'boss'];
       const b = new Character(this.goalNpc.look, { outline: true });
       const bp = this.world.spawns.boss;
@@ -252,6 +286,44 @@ class Game {
       this.fetch = { phase: 'find', progress: 0, noteT: 0, tick: 0, pos: { x: f.x, z: f.z } };
       this.world.goalFx.group.position.set(f.x, 0, f.z);
     }
+
+    // 引き継ぎポイント（後任の淀川さんに踏ませる）
+    this.handover = null;
+    if (stage.goalType === 'handover' && this.world.spawns.handover?.length) {
+      const ringGeo = new THREE.RingGeometry(0.42, 0.5, 4, 1, Math.PI / 4); // 四角い枠
+      const mats = ['#2f6db5', '#2e9e5b'].map((color) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false }));
+      const opt = (bg) => ({ w: 384, h: 96, bg, color: '#ffffff', font: '800 40px "M PLUS Rounded 1c", sans-serif', radius: 16 });
+      const points = this.world.spawns.handover.map((w, i) => {
+        const h = stage.handover[i];
+        const tex = { todo: textTexture(`引継${NUMS[i]} ${h.label}`, opt('#2f6db5')), done: textTexture(`済 ${h.label}`, opt('#2e9e5b')) };
+        const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), new THREE.MeshBasicMaterial({ map: tex.todo, depthTest: false, transparent: true }));
+        sign.position.set(w.x, 2.3, w.z);
+        sign.renderOrder = 5;
+        const ring = new THREE.Mesh(ringGeo, mats[0]);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(w.x, 0.03, w.z);
+        this.scene.add(sign, ring);
+        return { ...h, i, star: `★${h.label}`, pos: { x: w.x, z: w.z }, tile: Math.floor(w.z) * this.world.W + Math.floor(w.x), done: false, trod: false, trodS: 0, tex, sign, ring };
+      });
+      this.handover = { points, ringGeo, mats, noteT: 0, greetT: 0, orient: null, label: '' };
+      const f = this.handoverTarget();
+      this.world.goalFx.group.position.set(f.pos.x, 0, f.pos.z);
+    }
+
+    // 空き段ボールの山（置けるのは同時に2個まで。同じメッシュを使い回す）
+    this.boxes = [];
+    if (this.world.spawns.items?.some((it) => it.id === 'box')) {
+      this.boxGeo = boxPileGeometry();
+      this.boxMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.84 });
+      for (let i = 0; i < 2; i++) {
+        const mesh = new THREE.Mesh(this.boxGeo, this.boxMat);
+        mesh.castShadow = true;
+        mesh.visible = false;
+        this.scene.add(mesh);
+        this.boxes.push({ mesh, on: false, t: 0, i: -1, walk: 0, sight: 0 });
+      }
+    }
+    this.boxCur = { k: 0, v: -1 };
 
     // 味方のエース新人
     this.ally = this.world.spawns.ally && !demo ? new Ally(this, this.world.spawns.ally) : null;
@@ -380,6 +452,32 @@ class Game {
     this.belts?.dispose();
     this.belts = null;
     this.congas = [];
+    this.trail?.dispose();
+    this.trail = null;
+    this.cart?.dispose();
+    this.cart = null;
+    this.successor?.dispose();
+    this.successor = null;
+    for (const w of this.handover?.points || []) {
+      w.sign.removeFromParent();
+      w.sign.geometry.dispose();
+      w.sign.material.dispose();
+      w.tex.todo.dispose();
+      w.tex.done.dispose();
+      w.ring.removeFromParent();
+    }
+    if (this.handover) {
+      this.handover.ringGeo.dispose();
+      for (const m of this.handover.mats) m.dispose();
+      this.handover = null;
+    }
+    for (const b of this.boxes || []) b.mesh.removeFromParent();
+    this.boxes = [];
+    this.boxGeo?.dispose();
+    this.boxMat?.dispose();
+    this.boxGeo = this.boxMat = null;
+    this.greetQ = [];
+    this.ui.setFollow(null);
     if (this.lureMesh) {
       this.lureMesh.removeFromParent();
       this.lureMesh.traverse((o) => {
@@ -486,7 +584,7 @@ class Game {
       this.introT = 0;
       const types = [...new Set(this.world.spawns.enemies.map((e) => e.type))]
         .sort((a, b) => CAST[b].power - CAST[a].power);
-      this.ui.intro(STAGES[i], types, () => this.startStage(), () => this.toTitle(), !!this.world.spawns.ally);
+      this.ui.intro(STAGES[i], types, () => this.startStage(), () => this.toTitle(), !!this.world.spawns.ally, STAGES[i].follower);
       this.audio.startMusic('title', 96);
     };
     this.ui.loading(true);
@@ -509,11 +607,14 @@ class Game {
     if (this.print) this.ui.setGoalLabel('動くコピー機');
     if (this.rooms) this.ui.setGoalLabel(this.rooms.list[this.rooms.free].name);
     if (this.fetch) this.ui.setGoalLabel(this.stage.fetchLabel);
+    if (this.handover) this.ui.setRally(this.handover.points, -1, '引き継ぎ（あと3か所）');
+    if (this.cart) this.ui.setFollow('台車 同行中');
+    if (this.successor) this.ui.setFollow(FOLLOW_TEXT.follow);
     this.state = 'flyover';
     this.flyT = 0;
     this.input.reset();
     const g = this.flyGoal();
-    this.ui.float(g.x, 2.6, g.z, this.fetch ? `まずは：${this.stage.fetchLabel}` : this.rooms ? `いま空いている：${this.rooms.list[this.rooms.free].name}` : `ゴール：${this.stage.goalLabel}`, 'good');
+    this.ui.float(g.x, 2.6, g.z, this.fetch ? `まずは：${this.stage.fetchLabel}` : this.rooms ? `いま空いている：${this.rooms.list[this.rooms.free].name}` : this.handover ? 'まずは：引き継ぎポイント（★）3か所' : `ゴール：${this.stage.goalLabel}`, 'good');
     this.audio.startMusic('play', TEMPO[this.stage.id]);
     this.audio.setTension(false);
   }
@@ -598,12 +699,15 @@ class Game {
     if (this.world.playerLight && P) this.world.playerLight.position.set(P.pos.x, 2.6, P.pos.z + 0.4);
     for (const r of this.rally || []) r.char.update(dt);
     this.ally?.update(dt);
+    this.cart?.animate(dt);
+    this.successor?.animate(dt);
     this.belts?.update(dt);
     this.suitcase?.update(dt);
     this.traffic?.update(dt, this.state === 'play' || this.state === 'title' || this.state === 'intro');
     this.weather?.update(dt);
     for (const r of this.rooms?.list || []) r.sign.quaternion.copy(this.camera.quaternion);
     for (const c of this.print?.copiers || []) if (c.sign) c.sign.quaternion.copy(this.camera.quaternion);
+    for (const w of this.handover?.points || []) w.sign.quaternion.copy(this.camera.quaternion);
     this.fx.update(dt);
     this.updateCamera(dt);
   }
@@ -646,6 +750,13 @@ class Game {
     P.frozen = false;
     P.update(dt, this.input);
     this.boss?.update(dt);
+    // 足あと：記録 → 同行者 → 床の足あと（いちばん後ろのたどり手から）
+    if (this.trail) {
+      this.trail.record(P.pos.x, P.pos.z, P.dashing);
+      this.cart?.update(dt);
+      this.successor?.update(dt);
+      this.trail.updatePrints(dt, this.trailFrom());
+    }
     this.separate();
 
     // 社長に呼び止められる
@@ -721,6 +832,9 @@ class Game {
       }
     }
     if (this.updateCongas()) return;
+    if (this.cart) this.updateCart();
+    if (this.okuriTune) this.updateOkuriGroup(dt);
+    if (this.boxes.length) this.updateBoxes(dt);
 
     // シュレッダー
     for (let i = 0; i < this.world.shredders.length; i++) {
@@ -782,6 +896,8 @@ class Game {
       this.updateRooms(dt);
     } else if (this.fetch) {
       this.updateFetch(dt);
+    } else if (this.handover) {
+      if (this.updateHandover(dt)) return;
     } else {
       const g = this.world.spawns.goal;
       if (Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < 0.85) this.reachGoal();
@@ -1185,6 +1301,332 @@ class Game {
     this.ui.bubble(P, '（割引券をそっと置く）', 'player', 1.4);
   }
 
+  // --- 足あと（第8章） ---------------------------------------------------------
+  /** 床に足あとを並べはじめる s（いちばん後ろのたどり手。いなければ直近 6m） */
+  trailFrom() {
+    let s = Infinity;
+    if (this.cart) s = this.cart.s;
+    if (this.successor) s = Math.min(s, this.successor.s);
+    for (const e of this.enemies) if (e.kind === 'okuri' && e.state === 'walk') s = Math.min(s, e.s);
+    return s === Infinity ? this.trail.headS - 6 : s;
+  }
+
+  /** エース新人が同行者のさらに後ろを歩くときの距離（足あとの上で、主人公から何 m 後ろか） */
+  allyTrailBack() {
+    return this.cart ? 4.2 : this.successor ? 3.0 : null; // 台車は押尾さん（3.3m後ろ）と重ならないよう 4.2
+  }
+
+  /** 台車：後ろから追ってきた人をはね飛ばす・来た道を引き返した主人公をひく */
+  updateCart() {
+    const C = this.cart;
+    const P = this.player;
+    const cp = C.cartPos;
+    for (const e of this.enemies) {
+      if (KNOCK_SKIP.has(e.kind) || e.state === 'slipped' || e.state === 'held' || e.state === 'lurk' || e.state === 'inline') continue;
+      if (Math.hypot(e.pos.x - cp.x, e.pos.z - cp.z) >= 0.8 || (C.v < 1 && !e.chasing)) continue;
+      e.slip(DAISHA.hit, '台車でドーン！ 振り切った！');
+      C.cue = DAISHA.move[0]; // 吹き出しが重ならないよう、少し間をおいて言う
+      C.lineT = 0.7;
+      this.audio.trip();
+    }
+    const dx = P.pos.x - cp.x;
+    const dz = P.pos.z - cp.z;
+    if (C.hitCD > 0 || C.v < 1 || Math.hypot(dx, dz) >= 0.75 || dx * C.dirX + dz * C.dirZ <= 0) return;
+    C.hitCD = 1.5;
+    if (P.invulnerable) {
+      this.dodges++;
+      this.ui.float(P.pos.x, 2.3, P.pos.z, 'スルッ！', 'good');
+      this.audio.sparkle();
+      return;
+    }
+    this.clock += 1;
+    P.slowT = 0.5;
+    P.char.play('stagger');
+    // 進行方向の横（主人公がいる側。歩けなければ反対側）へ押し出す
+    let side = dx * -C.dirZ + dz * C.dirX >= 0 ? 1 : -1;
+    for (let k = 0; k < 2; k++, side = -side) {
+      const nx = P.pos.x - C.dirZ * 0.6 * side;
+      const nz = P.pos.z + C.dirX * 0.6 * side;
+      if (this.world.grid.isWalkWorld(nx, nz)) {
+        P.pos.x = nx;
+        P.pos.z = nz;
+        break;
+      }
+    }
+    this.world.grid.resolveCircle(P.pos, P.r);
+    this.shake(0.12);
+    this.audio.paperHit();
+    this.ui.float(P.pos.x, 2.3, P.pos.z, 'ゴツン！ 台車 -1分', 'minus');
+    C.say(DAISHA.bump[1], 1.4);
+  }
+
+  /** お見送り隊：人数と盛り上がり、傘での解散、叫び声、追従者チップ */
+  updateOkuriGroup(dt) {
+    const P = this.player;
+    let n = 0;
+    for (const e of this.enemies) if (e.kind === 'okuri' && (e.state === 'walk' || e.state === 'join')) n++;
+    if (n && P.umbrellaT > 0) {
+      this.okuriSay('主役が消えた！', n);
+      this.scatterOkuri();
+      n = 0;
+    }
+    this.okuriN = n;
+    this.okuriShoutT -= dt;
+    if (n) {
+      if (n >= this.okuriTune.hypeAt && !this.okuriHype) {
+        this.okuriHype = true;
+        this.ui.toast('盛り上がってまいりました！（追っ手が速くなった）', 'announce');
+        this.okuriSay('ヒューヒュー！', n);
+      } else if (P.phoneT > 0 && this.okuriPhone !== P.phoneLeft) {
+        this.okuriPhone = P.phoneLeft;
+        this.okuriSay('シーッ、主役が電話中！', n);
+      } else if (this.okuriShoutT <= 0) {
+        this.okuriShoutT = 2.2;
+        this.okuriSay(null, n);
+      }
+    }
+    if (n !== this.okuriShown) {
+      this.okuriShown = n;
+      this.ui.setFollow(n ? `お見送り ×${n}` : null, 'okuri');
+    }
+  }
+
+  /** 追っているお見送り隊の誰か1人がしゃべる（text が null なら shouts から） */
+  okuriSay(text, n) {
+    let r = Math.floor(Math.random() * n);
+    for (const e of this.enemies) {
+      if (e.kind !== 'okuri' || (e.state !== 'walk' && e.state !== 'join') || r-- > 0) continue;
+      e.say(text || pick(Math.random, e.cfg.shouts), 'okuri', 1.4);
+      return;
+    }
+  }
+
+  scatterOkuri() {
+    for (const e of this.enemies) if (e.kind === 'okuri' && (e.state === 'walk' || e.state === 'join' || e.state === 'lost')) e.scatter();
+    if (this.okuriShown) {
+      this.okuriShown = 0;
+      this.ui.setFollow(null);
+    }
+  }
+
+  // --- 引き継ぎ（STAGE 23） ----------------------------------------------------
+  /** まだ済んでいない・主人公もまだ踏んでいない引き継ぎポイントのうち、いちばん近いもの */
+  handoverTarget() {
+    const P = this.player;
+    let best = null;
+    let bd = Infinity;
+    for (const w of this.handover.points) {
+      if (w.done || w.trod) continue;
+      const d = Math.hypot(w.pos.x - P.pos.x, w.pos.z - P.pos.z);
+      if (d < bd) {
+        bd = d;
+        best = w;
+      }
+    }
+    return best;
+  }
+
+  /** 淀川さんが踏んだ判定・あいさつ・オリエンテーション・ゴール。ゴールしたら true */
+  updateHandover(dt) {
+    const H = this.handover;
+    const P = this.player;
+    const S = this.successor;
+    const W = this.world.W;
+    H.noteT = Math.max(0, H.noteT - dt);
+    const ptile = Math.floor(P.pos.z) * W + Math.floor(P.pos.x);
+    const stile = Math.floor(S.pos.z) * W + Math.floor(S.pos.x);
+    let left = 0;
+    S.closeIn = false;
+    for (const w of H.points) {
+      if (w.done) continue;
+      if (S.state === 'follow' && (stile === w.tile || Math.hypot(S.pos.x - w.pos.x, S.pos.z - w.pos.z) < 0.75)) {
+        w.done = true;
+        S.set('memo', 1.5);
+        S.say(w.memo, 1.8);
+        w.sign.material.map = w.tex.done;
+        w.sign.material.needsUpdate = true;
+        w.ring.material = H.mats[1];
+        // スマホでは短く。吹き出し（メモ・「ここです！」）と重ならないよう高めに出す
+        this.ui.dropBubble(P);
+        this.ui.float(P.pos.x, 3.0, P.pos.z, this.input.touch ? `引き継ぎ${NUMS[w.i]} 完了！` : `引き継ぎ${NUMS[w.i]}『${w.name}』完了！`, 'good');
+        this.fx.sparkle(S.pos.x, 1.2, S.pos.z, 12);
+        this.audio.stamp();
+        H.label = '';
+        continue;
+      }
+      left++;
+      if (ptile === w.tile) S.closeIn = true; // ★の上で待てば、淀川さんがそばまで来て踏む
+      if (!w.trod && ptile === w.tile) {
+        w.trod = true;
+        w.trodS = this.trail.headS;
+        this.ui.bubble(P, '淀川さん、ここです！', 'player', 1.4);
+      } else if (w.trod && S.s > w.trodS + 1.5) {
+        w.trod = false; // 淀川さんが踏みそこねたら、もう一度案内する
+      }
+    }
+    // 目標の表示（変わったときだけ書き換える）
+    const tgt = this.handoverTarget();
+    const g = this.world.spawns.goal;
+    this.world.goalFx.group.position.set(tgt ? tgt.pos.x : g.x, 0, tgt ? tgt.pos.z : g.z);
+    const label = tgt ? tgt.star : this.stage.goalLabel;
+    if (label !== H.label) {
+      H.label = label;
+      this.ui.setRally(H.points, -1, label);
+    }
+    this.ui.setFollow(FOLLOW_TEXT[S.state], S.state === 'follow' || S.state === 'done' ? '' : 'busy');
+    // あいさつされた人は 0.5 秒後に気づく
+    for (let i = this.greetQ.length - 1; i >= 0; i--) {
+      const q = this.greetQ[i];
+      q.t -= dt;
+      if (q.t > 0) continue;
+      this.greetQ.splice(i, 1);
+      this.greetAlert(q.e);
+    }
+    // オリエンテーション中のやりとり（深川さんと淀川さんが交互に）
+    const o = H.orient;
+    if (o) {
+      o.t -= dt;
+      if (o.t <= 0 && o.e.state === 'held' && o.i < 6) {
+        o.t = 0.75;
+        if (o.i % 2 === 0) o.e.say(o.e.cfg.orientLines[(o.i / 2) % o.e.cfg.orientLines.length], '', 1.4);
+        else S.say(SUCCESSOR.orient[((o.i - 1) / 2) % SUCCESSOR.orient.length], 1.4);
+        o.i++;
+      } else if (o.e.state !== 'held') H.orient = null;
+    }
+    H.greetT -= dt;
+    if (S.state === 'follow' && H.greetT <= 0) {
+      H.greetT = 0.1;
+      this.greetCheck(S);
+    }
+    // 部長席：3か所が済んで、淀川さんがそばにいればクリア
+    if (Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < 0.85) {
+      if (!left && Math.hypot(S.pos.x - P.pos.x, S.pos.z - P.pos.z) <= 2.5) {
+        this.reachGoal();
+        return true;
+      }
+      if (H.noteT <= 0) {
+        H.noteT = 3;
+        this.ui.float(P.pos.x, 2.3, P.pos.z, left ? `引き継ぎがまだ${left}か所` : '淀川さんを連れてこないと！', 'info');
+      }
+    }
+    return false;
+  }
+
+  /** 淀川さんのそばの人：律儀にあいさつする（電話・傘の間は会釈だけ）。深川さんはオリエンテーション */
+  greetCheck(S) {
+    const P = this.player;
+    const grid = this.world.grid;
+    for (const e of this.enemies) {
+      if (e.cool > 0 || e.behaving || Math.hypot(e.pos.x - S.pos.x, e.pos.z - S.pos.z) >= 1.6) continue;
+      if (e.cfg.orientation) {
+        if (!ORIENT_FROM.has(e.state)) continue;
+        e.hold(e.cfg.orientation, S.pos);
+        S.set('orient', e.cfg.orientation, e);
+        this.handover.orient = { e, t: 0, i: 0 };
+        this.ui.emote(e, '！');
+        this.ui.float(S.pos.x, 2.6, S.pos.z, `新任者オリエンテーション（${e.cfg.orientation}秒）`, 'info');
+        return;
+      }
+      if (e.greetT > 0 || !GREETABLE.has(e.kind) || !CALM.has(e.state) || !grid.los(S.pos.x, S.pos.z, e.pos.x, e.pos.z)) continue;
+      e.greetT = 15;
+      if (P.phoneT > 0 || P.umbrellaT > 0) {
+        S.say(pick(Math.random, SUCCESSOR.quiet), 1.4);
+        continue;
+      }
+      S.set('greet', 0.8, e);
+      S.say(pick(Math.random, SUCCESSOR.greet), 1.6);
+      e.say(pick(Math.random, e.cfg.kouninLines || KOUNIN_REACT), '', 1.8);
+      this.ui.emote(e, '？');
+      this.greetQ.push({ e, t: 0.5 });
+      return;
+    }
+  }
+
+  /** あいさつされた人が、滑川に気づく */
+  greetAlert(e) {
+    if (e.kind === 'shinjin' && e.state === 'idle') e.shinjinNotice();
+    else if ((e.kind === 'mtg' || e.kind === 'keiri') && e.state === 'look' && e.cool <= 0) e.spot();
+    else e.alert();
+  }
+
+  // --- 空き段ボール -----------------------------------------------------------
+  /** すぐ後ろの足あとの上に段ボールの山を置く。置けなければ false（アイテムは減らさない） */
+  placeBox() {
+    const P = this.player;
+    const grid = this.world.grid;
+    const tr = this.trail;
+    for (const d of [1.2, 1.8, 0.8]) {
+      if (tr) tr.sample(tr.headS - d, this.boxCur, _tp);
+      else {
+        _tp.x = P.pos.x - P.facing.x * d;
+        _tp.z = P.pos.z - P.facing.y * d;
+      }
+      const tx = Math.floor(_tp.x);
+      const tz = Math.floor(_tp.z);
+      if (!this.canBox(tx, tz)) continue;
+      let b = this.boxes.find((o) => !o.on);
+      if (!b) {
+        b = this.boxes[0].t > this.boxes[1].t ? this.boxes[0] : this.boxes[1];
+        this.removeBox(b, false);
+      }
+      const i = tz * grid.w + tx;
+      b.i = i;
+      b.walk = grid.walk[i];
+      b.sight = grid.sight[i];
+      grid.walk[i] = 0;
+      grid.sight[i] = 1; // 後ろの追っ手から見えなくなる
+      grid.fields.clear();
+      this.lastTile = -1;
+      b.on = true;
+      b.t = 0;
+      b.mesh.position.set(tx + 0.5, 0, tz + 0.5);
+      b.mesh.rotation.y = (Math.random() - 0.5) * 0.6;
+      b.mesh.scale.setScalar(0.01);
+      b.mesh.visible = true;
+      this.fx.dust(tx + 0.5, tz + 0.5, 12, '#e8d9b0', 1.2);
+      this.audio.noise(0.25, { freq: 260, q: 0.8, vol: 0.3 });
+      this.shake(0.06);
+      this.ui.float(P.pos.x, 2.4, P.pos.z, pick(Math.random, BOX_LINES), 'good');
+      return true;
+    }
+    this.ui.float(P.pos.x, 2.3, P.pos.z, 'ここには置けない', 'info');
+    return false;
+  }
+
+  /** 段ボールを置けるマスか（歩けるマス・自分のマスでない・ゴールや★やエレベーターの隣でない・人がいない） */
+  canBox(tx, tz) {
+    const grid = this.world.grid;
+    const P = this.player;
+    if (!grid.isWalk(tx, tz) || (Math.floor(P.pos.x) === tx && Math.floor(P.pos.z) === tz)) return false;
+    for (let y = tz - 1; y <= tz + 1; y++) for (let x = tx - 1; x <= tx + 1; x++) if ('GWe'.includes(grid.at(x, y))) return false;
+    const near = (p) => Math.hypot(Math.max(tx - p.x, 0, p.x - tx - 1), Math.max(tz - p.z, 0, p.z - tz - 1)) < 0.5;
+    for (const e of this.enemies) if (e.char.root.visible && near(e.pos)) return false;
+    if (this.cart && (near(this.cart.pos) || near(this.cart.cartPos))) return false;
+    if (this.successor && near(this.successor.pos)) return false;
+    return !(this.ally && near(this.ally.pos));
+  }
+
+  removeBox(b, note) {
+    const grid = this.world.grid;
+    grid.walk[b.i] = b.walk;
+    grid.sight[b.i] = b.sight;
+    grid.fields.clear();
+    this.lastTile = -1;
+    b.on = false;
+    b.mesh.visible = false;
+    if (note) this.ui.float(b.mesh.position.x, 2.2, b.mesh.position.z, '段ボール、回収されていった', 'info');
+  }
+
+  /** 置いた山は 0.15 秒で大きくなって現れ、8 秒で縮んで消える */
+  updateBoxes(dt) {
+    for (const b of this.boxes) {
+      if (!b.on) continue;
+      b.t += dt;
+      b.mesh.scale.setScalar(clamp(Math.min(b.t, 8 - b.t) / 0.15, 0.01, 1));
+      if (b.t >= 8) this.removeBox(b, true);
+    }
+  }
+
   // --- 会話 -----------------------------------------------------------------
   /** エース新人が一度だけ身代わりになる。なったら true */
   tryAlly(e) {
@@ -1206,6 +1648,8 @@ class Game {
   }
 
   startTalk(e, called = false, opt = {}) {
+    // お見送り隊は、会話が始まったら（身代わりのときも）満足して解散する
+    this.scatterOkuri();
     if (!opt.skipAlly && this.tryAlly(e)) return;
     const P = this.player;
     if (!opt.noRecord) {
@@ -1412,6 +1856,8 @@ class Game {
       this.tipT = 0.8;
       this.ui.toast('スタート！');
       this.audio.countdown(true);
+      const F = this.cart || this.successor;
+      F?.say(F.cfg.hello[0], 2.2);
       this.input.reset();
       for (const e of this.enemies) {
         e.pos.set(e.home.x, 0, e.home.z);
@@ -1425,10 +1871,11 @@ class Game {
   // --- ハンコラリー -----------------------------------------------------------
   /** 開始演出でカメラが最初に映す場所 */
   flyGoal() {
-    return this.fetch || this.rooms ? this.currentGoal() : this.world.spawns.goal;
+    return this.fetch || this.rooms || this.handover ? this.currentGoal() : this.world.spawns.goal;
   }
 
   currentGoal() {
+    if (this.handover) return this.handoverTarget()?.pos || this.world.spawns.goal;
     if (this.rooms) return this.rooms.list[this.rooms.free];
     if (this.fetch) return this.fetch.phase === 'find' ? this.fetch.pos : this.world.spawns.goal;
     if (this.print) {
@@ -1672,11 +2119,12 @@ class Game {
     this.shake(0.1);
   }
 
-  onEnemySlip(e) {
+  onEnemySlip(e, text) {
     if (this.state !== 'play') return;
     this.dodges++;
     this.record('dodged', e.type);
-    this.ui.float(e.pos.x, 2.2, e.pos.z, 'ツルッ！ 振り切った！', 'good');
+    // 台車のときは、はね飛ばされた人の吹き出しより上に出す
+    this.ui.float(e.pos.x, text ? 2.9 : 2.2, e.pos.z, text || 'ツルッ！ 振り切った！', 'good');
     this.fx.dust(e.pos.x, e.pos.z, 10, '#bcd6f0', 1.2);
     this.audio.noise(0.2, { freq: 600, q: 1, vol: 0.2 });
   }
@@ -1758,9 +2206,13 @@ class Game {
     this.audio.setTension(false);
     // goalEnd で演出だけ差し替えられる（客室がゴールの fetch など）
     const type = this.stage.goalEnd || this.stage.goalType;
-    if (type === 'boss' || type === 'desk') {
+    if (type === 'boss' || type === 'desk' || type === 'handover') {
       const b = this.boss;
       const npc = this.goalNpc;
+      if (this.successor) {
+        this.successor.set('done', 0, { pos: b.root.position });
+        this.successor.say(SUCCESSOR.goal[0], 2);
+      }
       P.char.faceDir(b.root.position.x - P.pos.x, b.root.position.z - P.pos.z);
       P.char.pose = 'bow';
       b.pose = 'talk';

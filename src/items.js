@@ -41,9 +41,16 @@ export const ITEMS = {
     hint: '使うと、宴会好きが群がる！', // 拾ったあとに出る使い方のヒント
     color: '#e84d8a',
   },
+  box: {
+    name: '空き段ボール',
+    short: '段ボール',
+    desc: '使うと、すぐ後ろに段ボールの山を置く（8秒）。通路をふさいで、追ってくる人も、足あとをたどる人も足止めする。',
+    hint: '使うと、後ろの足あとをふさげる！',
+    color: '#c89b5a',
+  },
 };
 
-export const ITEM_CODES = { E: 'energy', U: 'umbrella', O: 'omiyage', S: 'shoecover', F: 'baramaki', '@': 'karaoke' };
+export const ITEM_CODES = { E: 'energy', U: 'umbrella', O: 'omiyage', S: 'shoecover', F: 'baramaki', '@': 'karaoke', '*': 'box' };
 export const BAG_SIZE = 2;
 
 /** 床に置くアイテムの見た目 */
@@ -98,6 +105,14 @@ export function itemMesh(id) {
     const tilt = new THREE.Group(); // 足元の輪は傾けない
     tilt.add(ticket, band, grip, head);
     tilt.rotation.x = 0.5;
+    g.add(tilt);
+  } else if (id === 'box') {
+    // たたんだ段ボールの板（ガムテープつき）
+    const board = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.4), std('#c8a165', { roughness: 0.8 }));
+    const tape = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.045, 0.402), std('#e8d9b0', { roughness: 0.6 }));
+    const tilt = new THREE.Group();
+    tilt.add(board, tape);
+    tilt.rotation.x = 0.45;
     g.add(tilt);
   } else {
     const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.18, 0.3), std('#f3ead8'));

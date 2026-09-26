@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAST, ALLY } from './cast.js';
+import { CAST, ALLY, SUCCESSOR, DAISHA } from './cast.js';
 import { ITEMS, BAG_SIZE } from './items.js';
 import { fmtClock } from './util.js';
 
@@ -143,7 +143,7 @@ export class UI {
   }
 
   // --- ステージ説明 ---------------------------------------------------------
-  intro(stage, types, onGo, onBack, hasAlly = false) {
+  intro(stage, types, onGo, onBack, hasAlly = false, companion = null) {
     $('intro-stage').textContent = `${stage.label} ・ ${stage.period} ${fmtClock(stage.start)}`;
     $('intro-title').textContent = stage.title;
     $('intro-brief').textContent = stage.brief;
@@ -165,6 +165,19 @@ export class UI {
         <small>${c.role}　${c.name}</small>
         <span class="danger" aria-label="危険度${c.power}">${dots}</span>
         <p>${c.trait}</p>`;
+      ul.appendChild(li);
+    }
+    // 同行者（台車の押尾さん・後任の淀川さん）
+    const f = { daisha: DAISHA, successor: SUCCESSOR }[companion];
+    if (f) {
+      const li = document.createElement('li');
+      li.className = 'cast-card ally-card follow-card';
+      li.innerHTML = `
+        <img src="${this.portraits[companion] || ''}" alt="" style="--c:${f.tint}33">
+        <b>${f.nick}<em>同行</em></b>
+        <small>${f.role}　${f.name}</small>
+        <span></span>
+        <p>${f.trait}</p>`;
       ul.appendChild(li);
     }
     if (hasAlly) {
@@ -193,7 +206,8 @@ export class UI {
       $('hud-title').textContent = stage.title;
       this.setDeadline(stage.deadline);
       $('gp-label').textContent = stage.goalLabel;
-      $('hud-rally').hidden = !stage.rally;
+      $('hud-rally').hidden = !(stage.rally || stage.goalType === 'handover' || stage.team);
+      this.goalTop = $('hud-rally').hidden ? 0 : 70; // ハンコ欄の下まで、目標の札を下げる
       $('dash-hint').classList.remove('fade');
       clearTimeout(this.hintTimer);
       this.hintTimer = setTimeout(() => $('dash-hint').classList.add('fade'), 7000);
@@ -237,6 +251,17 @@ export class UI {
       this.lastPapers = papers;
     }
     $('btn-dash').style.setProperty('--cd', dashCd.toFixed(3));
+  }
+
+  /** 同行者のチップ（変わったときだけ書き換える。null で隠す） */
+  setFollow(text, cls = '') {
+    if (text === this.followText && cls === this.followCls) return;
+    this.followText = text;
+    this.followCls = cls;
+    const el = $('hud-follow');
+    el.hidden = !text;
+    el.className = `hud-chip hud-follow ${cls}`;
+    if (text) el.textContent = text;
   }
 
   setAlly(on, portrait) {
@@ -290,9 +315,13 @@ export class UI {
     this.progEl.classList.toggle('paused', paused);
   }
 
+  /** ハンコラリーの表示（引き継ぎでも使う。r.done があればそれで済みを決め、idx < 0 なら次の印を付けない） */
   setRally(rally, idx, label) {
     const el = $('hud-rally');
-    el.innerHTML = rally.map((r, i) => `<span class="rs${i < idx ? ' on' : ''}${i === idx ? ' next' : ''}"><i>${i < idx ? '印' : ''}</i>${r.label}</span>`).join('');
+    el.innerHTML = rally.map((r, i) => {
+      const on = r.done ?? i < idx;
+      return `<span class="rs${on ? ' on' : ''}${idx >= 0 && i === idx ? ' next' : ''}"><i>${on ? '印' : ''}</i>${r.label}</span>`;
+    }).join('');
     $('gp-label').textContent = label;
   }
 
@@ -309,7 +338,8 @@ export class UI {
     let y = ((1 - _v.y) / 2) * H;
     const behind = _v.z > 1;
     const margin = 70;
-    const on = !behind && x > margin && x < W - margin && y > margin + 60 && y < H - margin;
+    const top = this.goalTop || 0;
+    const on = !behind && x > margin && x < W - margin && y > margin + 60 + top && y < H - margin;
     el.style.display = 'flex';
     if (on) {
       el.style.transform = `translate(${x}px, ${y - 40}px) translate(-50%, -100%)`;
@@ -327,7 +357,7 @@ export class UI {
       const sy = (H / 2 - margin - 30) / Math.abs(dy || 1);
       const s = Math.min(sx, sy);
       x = cx + dx * s;
-      y = cy + dy * s + 15;
+      y = Math.max(cy + dy * s + 15, margin + 45 + top);
       el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       el.querySelector('.gp-arrow').style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
     }
@@ -335,14 +365,18 @@ export class UI {
 
   // --- ワールド上の吹き出し ------------------------------------------------
   bubble(entity, text, style = '', dur = 1.6) {
-    const old = this.anchored.find((a) => !a.dead && a.entity === entity && a.kind === 'bubble');
-    if (old) this.remove(old);
+    this.dropBubble(entity);
     const el = document.createElement('div');
     el.className = `bubble ${style}`;
     el.innerHTML = `<span class="in"></span>`;
     el.firstChild.textContent = text;
     this.layer.appendChild(el);
     this.anchored.push({ el, entity, kind: 'bubble', t: 0, dur, y: 2.05 });
+  }
+
+  dropBubble(entity) {
+    const old = this.anchored.find((a) => !a.dead && a.entity === entity && a.kind === 'bubble');
+    if (old) this.remove(old);
   }
 
   emote(entity, text) {

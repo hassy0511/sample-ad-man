@@ -138,6 +138,31 @@ class Builder {
 
 const WALLISH = new Set(['#', '|', 'k', 'x', 'e', 'D', 'g']);
 
+/** 積まれた段ボール（高さ約1.2m）。B.at() の位置に置く */
+function boxPile(B, rng) {
+  const sizes = [[0.62, 0.42, 0.52], [0.56, 0.4, 0.46], [0.5, 0.38, 0.42]];
+  let y = 0;
+  for (let i = 0; i < sizes.length; i++) {
+    const [w, h, d] = sizes[i];
+    const ry = (rng() - 0.5) * 0.35;
+    const ox = (rng() - 0.5) * 0.08;
+    const oz = (rng() - 0.5) * 0.08;
+    B.box('matte', '#c8a165', ox, y + h / 2, oz, w, h, d, 0, ry);
+    B.box('matte', '#e8d9b0', ox, y + h + 0.004, oz, 0.1, 0.01, d + 0.004, 0, ry);
+    if (i !== 1) B.box('matte', '#f5f3ee', ox + Math.sin(ry) * (d / 2 + 0.003), y + h * 0.55, oz + Math.cos(ry) * (d / 2 + 0.003), 0.2, 0.12, 0.01, 0, ry);
+    y += h;
+  }
+}
+
+/** 床に置く段ボールの山（空き段ボールのアイテム）。R と同じ見た目の1ジオメトリ */
+export function boxPileGeometry() {
+  const batch = new GeoBatch();
+  const B = new Builder({ matte: batch });
+  B.at(0, 0);
+  boxPile(B, mulberry32(7));
+  return batch.build();
+}
+
 export class World {
   constructor(stage, renderer) {
     this.stage = stage;
@@ -181,6 +206,8 @@ export class World {
         else if (c === 'C') this.spawns.pickups.push({ x: x + 0.5, z: y + 0.5 });
         else if (c === 'A') this.spawns.ally = { x: x + 0.5, z: y + 0.5 };
         else if (c === 'K') this.spawns.fetch = { x: x + 0.5, z: y + 0.5 };
+        else if (c === 'T') this.spawns.follower = { x: x + 0.5, z: y + 0.5 };
+        else if (c === 'W') (this.spawns.handover ||= []).push({ x: x + 0.5, z: y + 0.5 });
         else if (c === '0') (this.spawns.rooms ||= []).push({ x: x + 0.5, z: y + 0.5 });
         else if (ITEM_CODES[c]) (this.spawns.items ||= []).push({ id: ITEM_CODES[c], x: x + 0.5, z: y + 0.5 });
         else if (c === '[') {
@@ -226,7 +253,7 @@ export class World {
   }
 
   buildFloor() {
-    const aoSet = new Set(['#', 'k', 'x', 'v', 'c', 'e', 'D', 'h', 'g', 's', 'w', '[', ']']);
+    const aoSet = new Set(['#', 'k', 'x', 'v', 'c', 'e', 'D', 'h', 'g', 's', 'w', '[', ']', 'R']);
     const tex = this.track(floorTexture(this.grid, this.floorType, (x, y) => aoSet.has(this.grid.at(x, y))));
     tex.anisotropy = this.maxAniso;
     const mat = this.track(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0 }));
@@ -328,6 +355,10 @@ export class World {
           case '<':
           case '>':
             this.beltEdge(B, x, y);
+            break;
+          case 'R':
+            B.at(cx, cz);
+            boxPile(B, this.rng);
             break;
           case 'm':
           case 'B':

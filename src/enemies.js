@@ -26,17 +26,23 @@ const TUNING = {
     cooldown: 4, absorbR: 0.6, absorbHeadR: 0.8, absorbT: 14, absorbCool: 6, bowR: 1.6, bowT: 3.5, bowCD: 12,
     yieldMax: 6, tangleR: 0.5, tangleT: 3.5, tangleCD: 8, rideCD: 1.2, lureR: 9,
   },
+  // お見送り隊（第8章）：主人公の足あとを嗅ぎつけて追う。速さは base + per × 追っている人数（max まで）
+  okuri: {
+    join: 2.2, run: 5.0, joinMax: 2.0, base: 3.8, per: 0.2, max: 4.8, hypeAt: 5, space: 0.8,
+    gap: 0.9, reacquire: 3.0, lostT: 1.2, lose: 14, back: 6, cooldown: 10,
+  },
 };
 
 // 濡れた床を走ると転ぶ速さ
 const SLIP_SPEED = 3.5;
 
 // 電話中のふりをすると話しかけてこない人たち
-const PHONE_RESPECT = new Set(['senpai', 'mtg', 'shinjin', 'kanji', 'doki', 'warikomi']);
+const PHONE_RESPECT = new Set(['senpai', 'mtg', 'shinjin', 'kanji', 'doki', 'warikomi', 'okuri']);
 // 近づくと話しかけてくるタイプ
 const TALKERS = new Set(['senpai', 'warikomi']);
 
 const _dir = { x: 0, z: 0 };
+const _tp = { x: 0, z: 0, dx: 0, dz: 1, gap: 0 };
 
 export class Enemy {
   constructor(game, spawn, patrol) {
@@ -59,6 +65,8 @@ export class Enemy {
     this.r = 0.3;
     this.t = 0;
     this.cool = 0;
+    this.greetT = 0; // 後任の淀川さんに、もうあいさつされた（秒）
+    this.slyT = 0; // ダッシュで横をすり抜けられて、気づきそこねている（秒）
     this.lineT = 1 + Math.random() * 2;
     this.lostT = 0;
     this.nearMissed = false;
@@ -113,6 +121,12 @@ export class Enemy {
     } else if (this.kind === 'kanji' || this.kind === 'zandaka') {
       this.state = 'guard';
       this.guard = game.stage.guard || { axis: 'z', min: spawn.z - 3, max: spawn.z + 3 };
+    } else if (this.kind === 'okuri') {
+      this.ring = new RangeRing(game.scene, '#ff5c7a', this.tune.join);
+      this.state = 'stand';
+      this.id = spawn.index;
+      this.s = 0;
+      this.cur = { k: 0, v: -1 };
     } else if (this.kind === 'conga') {
       this.bowCD = 0;
       this.tangleCD = 0;
@@ -228,7 +242,7 @@ export class Enemy {
 
   /** つかまえられる状態か */
   get onPhone() {
-    return this.game.player?.phoneT > 0 && PHONE_RESPECT.has(this.kind);
+    return this.game.player?.phoneT > 0 && PHONE_RESPECT.has(this.kind) && !this.cfg.ignorePhone;
   }
 
   giveupLine() {
@@ -247,6 +261,7 @@ export class Enemy {
       case 'mimi': return ['listen', 'go', 'search', 'notice', 'chase', 'return'].includes(this.state);
       case 'kanji':
       case 'zandaka': return this.state === 'guard';
+      case 'okuri': return this.state === 'walk'; // 足あとへ駆け寄る途中（join）は捕まえない
       default: return false;
     }
   }
@@ -261,6 +276,11 @@ export class Enemy {
     else if ((this.kind === 'keiri' || this.kind === 'mtg') && ['patrol', 'stand', 'resume'].includes(this.state)) this.spot();
     else if (this.kind === 'shorui' && this.state === 'idle') this.throwT = 0;
     else if (this.kind === 'doki' && this.state === 'wander') this.dokiNotice();
+    else if (this.kind === 'okuri' && this.state === 'stand' && this.game.trail) {
+      // 新人くんの「せんぱ〜い！」で、近くの足あとを嗅ぎつける
+      const n = this.game.trail.nearestS(this.pos.x, this.pos.z, this.tune.back);
+      if (n.d <= 6) this.okuriJoin(n.s);
+    }
   }
 
   notice(mark = '！') {
@@ -299,15 +319,15 @@ export class Enemy {
     this.char.spin = 0;
   }
 
-  /** 濡れた床で転ぶ */
-  slip() {
+  /** 濡れた床で転ぶ（台車にはね飛ばされたときも。lines・text で吹き出しと表示を差し替える） */
+  slip(lines, text) {
     this.set('slipped');
     this.char.play('trip');
     this.char.setMood('dizzy');
-    this.say(pick(Math.random, ['うわっ！', 'ツルッ！？', 'あいたたた…']), '', 1.3);
+    this.say(pick(Math.random, lines || ['うわっ！', 'ツルッ！？', 'あいたたた…']), '', 1.3);
     this.ring?.update(this.pos.x, this.pos.z, 0);
     if (this.cone) this.cone.visible = false;
-    this.game.onEnemySlip?.(this);
+    this.game.onEnemySlip?.(this, text);
   }
 
   /** 起き上がったあと、ふだんの動きに戻る */
@@ -320,6 +340,7 @@ export class Enemy {
     else if (this.kind === 'doki' || this.kind === 'golf') this.set('wander');
     else if (this.kind === 'kanji' || this.kind === 'zandaka') this.set('guard');
     else if (this.kind === 'shinjin' || this.kind === 'mimi') this.set('return');
+    else if (this.kind === 'okuri') this.scatter();
     else this.set('idle');
   }
 
@@ -330,6 +351,7 @@ export class Enemy {
     if (this.cfg.after) this.say(pick(Math.random, this.cfg.after), '', 1.8);
     this.char.pose = this.kind === 'kanji' ? 'dance' : 'idle';
     if (this.kind === 'conga') this.set(this.cfg.conga.mode === 'route' ? 'walk' : 'rest');
+    else if (this.kind === 'okuri') this.scatter();
     else if (TALKERS.has(this.kind) || this.kind === 'mimi') this.set('return');
     else if (this.kind === 'keiri' || this.kind === 'mtg') this.set(this.patrol ? 'resume' : 'stand');
     else if (this.kind === 'kanji') this.set('guard');
@@ -425,6 +447,8 @@ export class Enemy {
     const c = this.char;
     this.t += dt;
     this.cool = Math.max(0, this.cool - dt);
+    this.greetT = Math.max(0, this.greetT - dt);
+    this.slyT = Math.max(0, this.slyT - dt);
     // 部屋に隠れている間は何もしない（見えない・捕まえない・音も聞かない）
     if (this.state === 'lurk') {
       this.rearm = Math.max(0, this.rearm - dt);
@@ -440,6 +464,11 @@ export class Enemy {
     const hidden = this.game.playerHidden || this.onPhone;
     const dist = this.distToPlayer();
     let pose = 'idle';
+    // 電話中のふりが効かない人は、ひとこと言う（電話1回につき1回）
+    if (this.cfg.phoneLine && this.state === 'chase' && this.player.phoneT > 0 && this.phoneSaid !== this.player.phoneLeft) {
+      this.phoneSaid = this.player.phoneLeft;
+      this.say(pick(Math.random, this.cfg.phoneLine), '', 1.6);
+    }
 
     // 社長に見られている間は、みんな大人しくなる
     this.behaving = this.kind !== 'shacho' && this.game.shachoSees(this.pos.x, this.pos.z);
@@ -534,6 +563,9 @@ export class Enemy {
       case 'conga':
         pose = this.updateConga(dt, dist, hidden);
         break;
+      case 'okuri':
+        pose = this.updateOkuri(dt, dist, hidden);
+        break;
       default:
         break;
     }
@@ -564,7 +596,11 @@ export class Enemy {
         c.targetYaw = this.homeYaw;
         // 割り込み係長は、印刷中の人なら遠くからでも気づく
         const range = this.kind === 'warikomi' && this.game.printing ? T.printNotice : T.notice;
-        if (!hidden && this.cool <= 0 && this.sees(range, Math.PI * 2, 0)) this.notice();
+        if (!hidden && this.cool <= 0 && this.slyT <= 0 && this.sees(range, Math.PI * 2, 0)) {
+          // 淀川さんのステージでは、ダッシュで横をすり抜けると気づかれない（後から来る淀川さんがあいさつしてしまう）
+          if (this.game.successor && this.player.dashing) this.slyT = 1.2;
+          else this.notice();
+        }
         this.ring?.update(this.pos.x, this.pos.z, this.cool > 0 ? 0 : clamp(1 - (dist - T.notice) / 4, 0, 1) * 0.55);
         return 'idle';
       }
@@ -1279,6 +1315,115 @@ export class Enemy {
     }
   }
 
+  // --- お見送り隊（足あとを嗅ぎつけて追う） -----------------------------------
+  /** 足あとの s の点へ向かい、着いたらたどりはじめる（主人公の 1m 後ろより前には割り込まない） */
+  okuriJoin(s) {
+    const tr = this.game.trail;
+    if (this.state !== 'lost') s = Math.min(s, tr.headS - 1);
+    tr.sample(s, this.cur, _tp);
+    this.joinS = s;
+    this.joinX = _tp.x;
+    this.joinZ = _tp.z;
+    if (this.state === 'lost') {
+      this.set('join');
+      this.say('こっちだ〜！', '', 1.3);
+      return;
+    }
+    this.set('join');
+    this.say(pick(Math.random, this.cfg.notice), '', 1.4);
+    this.game.ui.emote(this, '♪');
+    this.game.audio.notice(this.cfg.voice.freq);
+    this.char.setMood('happy');
+  }
+
+  /** 持ち場へ戻る（会話・傘・見失ったとき） */
+  scatter() {
+    this.set('scatter');
+    this.cool = this.tune.cooldown;
+    this.char.setMood('normal');
+  }
+
+  updateOkuri(dt, dist, hidden) {
+    const T = this.tune;
+    const c = this.char;
+    const P = this.player;
+    const tr = this.game.trail;
+    c.headYaw = 0;
+    switch (this.state) {
+      case 'stand':
+        // 拍手で待ちかまえる。歩いて近くを通ると気づく（ダッシュ中・電話中・傘の間は気づかない）
+        this.stop(dt);
+        if (dist < 6) this.facePlayer();
+        else c.targetYaw = this.homeYaw;
+        this.ring.update(this.pos.x, this.pos.z, this.cool > 0 ? 0 : clamp(1 - (dist - T.join) / 4, 0, 1) * 0.5);
+        if (!this.game.playerHidden && this.cool <= 0 && !P.dashing && P.phoneT <= 0 && this.sees(T.join, Math.PI * 2, 0)) {
+          this.okuriJoin(tr.nearestS(this.pos.x, this.pos.z, T.back).s);
+        }
+        return 'cheer';
+      case 'join': {
+        this.ring.update(this.pos.x, this.pos.z, 0);
+        if (this.moveTo(this.joinX, this.joinZ, T.run, dt) < 0.5) {
+          this.s = this.joinS;
+          this.set('walk');
+        } else if (this.t > T.joinMax) {
+          this.scatter();
+        }
+        return 'reach';
+      }
+      case 'walk': {
+        // 途切れ目（ダッシュの区間）で見失う・引き離されたらあきらめる
+        const ge = tr.gapAhead(this.s, this.s + 0.4);
+        if (ge >= 0 && ge - tr.gapFrom >= T.gap) {
+          this.gapEnd = ge;
+          this.vel.x = this.vel.z = 0;
+          this.set('lost');
+          this.game.ui.emote(this, '？');
+          return 'look';
+        }
+        if (tr.headS - this.s > T.lose) {
+          this.say(pick(Math.random, this.cfg.giveup), '', 1.5);
+          this.scatter();
+          return 'idle';
+        }
+        // 前の追っ手に詰めすぎない。主人公の 0.3m 手前まで
+        let cap = tr.headS - 0.3;
+        for (const o of this.game.enemies) {
+          if (o === this || o.kind !== 'okuri' || o.state !== 'walk') continue;
+          if (o.s > this.s || (o.s === this.s && o.id < this.id)) cap = Math.min(cap, o.s - T.space);
+        }
+        let ds = clamp(cap - this.s, 0, Math.min(T.max, T.base + T.per * this.game.okuriN) * dt);
+        if (P.phoneT > 0 || (ds > 0 && tr.blockedAt(this.s + 0.4))) ds = 0; // 電話中・段ボールの前では止まる
+        this.s += ds;
+        tr.sample(this.s, this.cur, _tp);
+        this.vel.x = dt > 0 ? (_tp.x - this.pos.x) / dt : 0;
+        this.vel.z = dt > 0 ? (_tp.z - this.pos.z) / dt : 0;
+        this.pos.x = _tp.x;
+        this.pos.z = _tp.z;
+        return ds > 0 ? 'reach' : 'cheer';
+      }
+      case 'lost':
+        // 見回して、近くに主役が見えれば途切れ目の先から追い直す
+        this.stop(dt);
+        c.headYaw = Math.sin(this.t * 3) * 0.9;
+        if (!hidden && dist < T.reacquire && this.game.world.grid.los(this.pos.x, this.pos.z, P.pos.x, P.pos.z)) this.okuriJoin(this.gapEnd);
+        else if (this.t > T.lostT) {
+          this.say(this.cfg.giveup[0], '', 1.5);
+          this.scatter();
+        }
+        return 'look';
+      case 'scatter': {
+        this.ring.update(this.pos.x, this.pos.z, 0);
+        if (this.moveTo(this.home.x, this.home.z, 2.2, dt) < 0.15) {
+          this.set('stand');
+          this.cool = T.cooldown;
+        }
+        return 'idle';
+      }
+      default:
+        return 'idle';
+    }
+  }
+
   /** タイトル画面の背景用：巡回だけする */
   demoUpdate(dt) {
     const c = this.char;
@@ -1295,7 +1440,7 @@ export class Enemy {
     }
     if (this.cone) this.cone.visible = false;
     this.ring?.update(this.pos.x, this.pos.z, 0);
-    c.pose = this.kind === 'kanji' ? 'dance' : this.kind === 'mimi' ? 'scroll' : this.conga && !this.patrol ? 'cheer' : 'idle';
+    c.pose = this.kind === 'kanji' ? 'dance' : this.kind === 'mimi' ? 'scroll' : (this.conga && !this.patrol) || this.kind === 'okuri' ? 'cheer' : 'idle';
     this.idle(dt);
   }
 

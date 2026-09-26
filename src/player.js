@@ -12,6 +12,7 @@ const ITEM_PROPS = {
   wallet: { right: 'wallet' },
   bag: { left: 'bag', right: 'penlight' },
   trip: { left: 'bag' }, // 右手はキャリーケースの持ち手
+  bouquet: { left: 'bouquet' },
 };
 
 export const DASH_TIME = 0.2;
@@ -167,6 +168,8 @@ export class Player {
       this.game.ui.float(this.pos.x, 2.3, this.pos.z, this.items.length ? `${ITEMS[this.items[0]].short}は持っているだけで効く` : 'カバンは空っぽ', 'info');
       return;
     }
+    // 段ボールは置ける場所がなければ使わない
+    if (id === 'box' && !this.game.placeBox()) return;
     this.takeItem(id);
     if (id === 'energy') {
       this.energyT = 8;

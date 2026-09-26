@@ -3,6 +3,8 @@ import { Character } from './characters.js';
 import { ALLY } from './cast.js';
 import { damp, pick } from './util.js';
 
+const _t = { x: 0, z: 0, dx: 0, dz: 1, gap: 0 };
+
 /** 味方のエース新人。見つけるとついてきて、一度だけ身代わりになる */
 export class Ally {
   constructor(game, spawn) {
@@ -14,6 +16,7 @@ export class Ally {
     this.state = 'wait';
     this.t = 0;
     this.lineT = 1.5;
+    this.cur = { k: 0, v: -1 };
     this.char.root.position.copy(this.pos);
     game.scene.add(this.char.root);
 
@@ -77,12 +80,18 @@ export class Ally {
       c.pose = d < 7 ? 'cheer' : 'idle';
       if (d < 0.9 && this.game.state === 'play') this.join();
     } else if (this.state === 'follow') {
-      // 主人公の少し後ろをついていく
+      // 主人公の少し後ろをついていく（同行者がいれば、そのさらに後ろの足あとの上）
       const fx = P.facing.x;
       const fz = P.facing.y;
       let tx = P.pos.x - fx * 1.1;
       let tz = P.pos.z - fz * 1.1;
-      if (!this.game.world.grid.isWalkWorld(tx, tz)) {
+      const back = this.game.allyTrailBack?.();
+      if (back != null) {
+        const tr = this.game.trail;
+        tr.sample(tr.headS - back, this.cur, _t);
+        tx = _t.x;
+        tz = _t.z;
+      } else if (!this.game.world.grid.isWalkWorld(tx, tz)) {
         tx = P.pos.x;
         tz = P.pos.z;
       }

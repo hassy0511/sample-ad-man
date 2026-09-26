@@ -961,6 +961,170 @@ export const CAST = {
       ['扶養控除等申告書、住所が去年のままです！', '引っ越したの、2年前ですよね？ 去年も同じこと言いましたよね？', '（12分経過）はい、ここと、ここと、ここにハンコを！'],
     ],
   },
+  toikawa: {
+    code: 27,
+    behavior: 'doki',
+    tune: { notice: 5.0, fov: 2.2, wander: 1.3, rush: 5.0, rushMax: 2.2, lose: 9, cooldown: 8 },
+    name: '問川さん',
+    role: '営業部 事務（旧部署）',
+    nick: 'あのファイルどこ？の人',
+    trait: '旧部署の事務。異動したその日から「あのファイルどこでしたっけ！？」と追いかけてくる。同じビルなので、5階まで階段で来る。目が合うと一直線に走ってくる。',
+    power: 2,
+    penalty: 10,
+    papers: 1,
+    stamp: 'ファイル捜索',
+    tint: '#e67e22',
+    voice: { freq: 380, type: 'triangle' },
+    look: {
+      skin: '#f5d3bd',
+      hair: { style: 'bob', color: '#4a3020' },
+      top: { type: 'cardigan', color: '#f0b27a' },
+      shirt: '#ffffff',
+      tie: null,
+      bottom: { type: 'skirt', color: '#5a6270' },
+      legs: '#d8b49a',
+      shoes: '#2a2a2a',
+      glasses: { color: '#8a5a3a' },
+      brows: 'worried',
+      cheeks: true,
+      scale: 0.95,
+      prop: { left: 'folder' },
+    },
+    notice: ['滑川さーん！', 'あのファイルどこでしたっけ！？', 'ちょっと、パスワード！'],
+    kouninLines: ['後任さん！？ …じゃあ、滑川さんにも聞いときます！', 'あ、後任の方！ …滑川さーん！ ついでに！'],
+    giveup: ['…自分で探します…', 'あとでチャットします！'],
+    after: ['助かりました〜！', 'また聞きに来ますね！（5階まで）'],
+    talks: [
+      ['滑川さん！ あのファイルどこでしたっけ！？', '（共有フォルダの「最新_最終_本当に最終」を一緒に開く）', '（10分経過）…あ、デスクトップにありました！'],
+      ['経費のパスワード、何でしたっけ？', '（付箋を探して、2人でキーボードの裏をのぞく）', '（10分経過）…Caps Lock入ってました！'],
+    ],
+  },
+  fukagawa: {
+    code: 28,
+    behavior: 'senpai',
+    orientation: 5, // 後任の淀川さんがそばを通ると、この秒数だけ新任者オリエンテーション（STAGE 23）
+    tune: { notice: 4.2, chase: 3.1, chaseMax: 6, lose: 9, cooldown: 9 },
+    name: '深川さん',
+    role: '人事部',
+    nick: '異動手続きの人事',
+    trait: '異動してきた人を見つけると、手続きの書類を抱えて寄ってくる。後任の淀川さんがそばを通ると、その場で「新任者オリエンテーション」を始めてしまう（5秒）。追われているときは、淀川さんに押しつけるのもひとつの手。',
+    power: 3,
+    penalty: 6,
+    papers: 1,
+    stamp: '手続き',
+    tint: '#7f8c8d',
+    voice: { freq: 200, type: 'sine' },
+    look: {
+      skin: '#eebd98',
+      hair: { style: 'neat', color: '#1b1716' },
+      top: { type: 'suit', color: '#3d4452' },
+      shirt: '#ffffff',
+      tie: '#7f8c8d',
+      bottom: { type: 'pants', color: '#3d4452' },
+      shoes: '#111111',
+      glasses: { color: '#1b1b1b', square: true },
+      brows: 'normal',
+      cheeks: false,
+      scale: 1.02,
+      prop: { left: 'clipboard' },
+    },
+    notice: ['滑川さん！ 手続き！', '異動届の件で…！', 'ちょっと、書類が！'],
+    orientLines: ['おや、新任の方ですね！ では、オリエンテーションを', '社内規定の第1条から、かいつまんで…', '（ホチキス留め40ページの「新任者のしおり」を渡した）'],
+    giveup: ['…では、メールで送っておきます', '（書類をそっとしまう）'],
+    after: ['では、5階でもお元気で！', '（書類があと2枚あることは、言わなかった）'],
+    talks: [
+      ['滑川さん！ 異動の手続き、まだ3つ残ってます', '通勤経路の変更届と、内線番号の変更届と…あと座席表の写真', '（6分経過）…あ、社員証の写真、撮り直しですね。今ここで。はい、チーズ'],
+      ['おや、滑川さん。5階の入館カード、もう届きました？', '届いてない？ じゃあ仮カードの申請書を。ここと、ここに署名を', '（6分経過）…はい。仮カードは、明日届きます'],
+    ],
+  },
+  namida: {
+    code: 29,
+    behavior: 'senpai',
+    ignorePhone: true,
+    tune: { notice: 4.5, chase: 2.8, chaseMax: 9, lose: 12, cooldown: 12 },
+    name: '大河原部長',
+    role: '営業部長（送別モード）',
+    nick: '涙もろい部長',
+    trait: 'ふだんは無口な部長が、部下を送り出す日だけは号泣する。ゆっくり、しつこくついてくる。電話中のふりは「電話なんか切れよぉ〜」で効かない。',
+    power: 4,
+    penalty: 20,
+    papers: 0,
+    stamp: '号泣',
+    tint: '#5d7fb3',
+    voice: { freq: 105, type: 'triangle' },
+    look: null, // BOSS より後で代入する
+    notice: ['滑川ぁ〜〜！', '行くなよぉ〜', '5階なんて遠すぎるだろぉ〜'],
+    phoneLine: ['電話なんか切れよぉ〜'],
+    giveup: ['（ハンカチで鼻をかんでいる）', '…5階、遊びに行くからなぁ'],
+    after: ['…よし。行ってこい！（号泣）', '（ハンカチがびしょびしょだ）'],
+    talks: [
+      ['滑川ぁ〜〜〜！（号泣）', 'おまえが入社した日のこと、覚えてるぞぉ…企画書が逆さまでなぁ…', '（20分経過）…新しい部署でも、スルスルやれよぉ（鼻水）'],
+      ['ちょっと座れ。な？ 最後だから', '（部長の武勇伝・平成編が始まる）', '（20分経過）…エレベーターで10秒の距離だけどなぁ…さみしいなぁ…'],
+    ],
+  },
+  okuri: {
+    code: 30,
+    name: '営業部のみなさん',
+    role: '送別の花道係',
+    nick: 'お見送り隊',
+    trait: '花束贈呈のあと、フロアのあちこちで主役を待ちかまえている。近くを歩いて通ると、あなたの足あとを嗅ぎつけて1歩ずつ追ってくる。人数が増えるほど盛り上がって速くなる。追いつかれたら胴上げ。ダッシュで足あとを途切れさせれば見失う。',
+    power: 3,
+    penalty: 10,
+    papers: 0,
+    stamp: '胴上げ',
+    tint: '#ff5c7a',
+    voice: { freq: 300, type: 'square' },
+    look: {
+      skin: '#f2c9a9',
+      hair: { style: 'short', color: '#2a2320' },
+      top: { type: 'shirt', color: '#ffffff' },
+      shirt: '#ffffff',
+      tie: '#2f6db5',
+      bottom: { type: 'pants', color: '#2d3240' },
+      shoes: '#222222',
+      brows: 'happy',
+      cheeks: true,
+      prop: { left: 'list' }, // 寄せ書きの色紙
+    },
+    // 見た目の違い（名前なしなので顔アイコンは okuri のまま）
+    variants: [
+      {},
+      {
+        look: { // 撮影係
+          skin: '#f6d7c1',
+          hair: { style: 'pony', color: '#5a3b28' },
+          top: { type: 'cardigan', color: '#f5a3c7' },
+          tie: null,
+          bottom: { type: 'skirt', color: '#3e4661' },
+          legs: '#d8b49a',
+          shoes: '#2a2a2a',
+          prop: { right: 'phone' },
+        },
+      },
+      {
+        look: {
+          skin: '#e3ae88',
+          hair: { style: 'side', color: '#3d2b20' },
+          top: { type: 'suit', color: '#44474f' },
+          shirt: '#e8f0fb',
+          tie: '#e8b82e',
+          bottom: { type: 'pants', color: '#44474f' },
+          shoes: '#111111',
+          glasses: { color: '#2b2b2b' },
+          prop: {},
+        },
+      },
+    ],
+    notice: ['主役〜！', 'よっ、主役！', 'お見送りしま〜す！', 'エレベーターまでお供します！'],
+    shouts: ['5階でも元気でね〜！', '最後だから言うけど、Excelのセル結合やめて〜！', '最後だから言うけど、冷蔵庫のプリン食べたの私！',
+      '最後だから言うけど、ネクタイずっと曲がってた！', '5階って、エレベーターで10秒だけどね〜！', '（パチパチパチパチ）'],
+    giveup: ['主役、見失った〜', '…まあ、5階だしね', 'あとでLINEしとこ'],
+    after: ['いい会だった〜！', 'じゃ、B1で！'],
+    talks: [
+      ['主役、確保〜〜！', 'せーの！ わっしょい！ わっしょい！', '（10分経過）…天井に頭をぶつけて、やっと降ろされた'],
+      ['つかまえた〜！ 最後にみんなで写真！', 'はい、もう1枚！ 次は変顔で！ 次は部署ごとに！', '（10分経過）…全42パターン、撮り終わった'],
+    ],
+  },
 };
 export const BOSS = {
   name: '大河原部長',
@@ -987,6 +1151,8 @@ export const BOSS = {
 
 // 無礼講部長は、部長の見た目にネクタイの鉢巻き（CAST の中では BOSS をまだ参照できない）
 CAST.bureiko.look = { ...BOSS.look, tie: null, headband: '#8a1f2b', blush: true, brows: 'happy', cheeks: true, prop: { right: 'mug' } };
+// 涙もろい部長は、部長の見た目にハンカチ
+CAST.namida.look = { ...BOSS.look, brows: 'worried', blush: true, prop: { right: 'hankie' } };
 // カラオケ割引券に群がる宴会好き
 CAST.kanji.party = true;
 CAST.settai.party = true;
@@ -1057,6 +1223,38 @@ GOAL_NPC.jomu = {
 };
 GOAL_NPC.boss.rallyLines = ['稟議か。どれどれ。', '課長のハンコ、ちょっと傾いてない？…まあいいか。', 'ポン。常務は午後いないから急いで。'];
 
+// 第8章：異動先の室長と、引き継ぎの報告を受ける部長
+GOAL_NPC.shitsucho = {
+  name: '熱海室長',
+  role: '特命プロジェクト室 室長',
+  nick: '室長',
+  tint: '#1f4e79',
+  voice: { freq: 150, type: 'sawtooth' },
+  look: {
+    skin: '#e9b995',
+    hair: { style: 'slick', color: '#1b1716' },
+    top: { type: 'shirt', color: '#ffffff' },
+    shirt: '#ffffff',
+    tie: '#1f4e79',
+    suspenders: '#1f4e79',
+    bottom: { type: 'pants', color: '#2d3240' },
+    shoes: '#111111',
+    glasses: { color: '#1b1b1b', square: true },
+    brows: 'normal',
+    cheeks: true,
+    width: 1.1,
+    scale: 1.04,
+  },
+  lines: ['おっ、来たな滑川！ 特命プロジェクト室へようこそ！', '（段ボールが次々と運び込まれてくる）', 'さっそくだが…でかいコンペが来る。君の“スルスル”、頼りにしてるぞ。'],
+  stamp: '着任',
+};
+GOAL_NPC.handover = {
+  ...BOSS,
+  nick: '営業部長',
+  lines: ['おう、引き継ぎ終わったか。', '（淀川さんが、メモ帳3冊と「新任者のしおり」を差し出している）', '……滑川より、ちゃんとしてるな。今夜の送別会、主役なんだから遅れるなよ！'],
+  stamp: '引継完了',
+};
+
 GOAL_NPC.judge = {
   name: '鶴田社長',
   role: '社内コンペ 審査員長',
@@ -1106,4 +1304,62 @@ export const ALLY = {
   join: ['お供します！何かあったら任せてください！', '先輩の背中、見て学びます！'],
   intercept: ['先輩は今忙しいので！僕が伺います！', 'その件、僕がお聞きします！', '先輩！ここは僕に任せて！'],
   reaction: ['お、君は新人の…じゃあ君に話そう', 'ほう、元気がいいね。聞いてくれる？', '……じゃあ、あなたに説明します'],
+};
+
+// 第8章の同行者（名簿には載らない）：後任の淀川さんと、台車の押尾さん
+export const SUCCESSOR = {
+  name: '淀川さん',
+  role: '営業部（4月から）',
+  nick: '年上の後任',
+  trait: '滑川の後任。前職は銀行員（勤続20年）。とにかく律儀で、あなたの足あとを1歩ずつたどり、すれ違う人全員にあいさつする。走れない。',
+  tint: '#4b8fd6',
+  voice: { freq: 150, type: 'triangle' },
+  look: {
+    skin: '#eebd98',
+    hair: { style: 'side', color: '#8a8580' },
+    top: { type: 'suit', color: '#2c3e66' },
+    shirt: '#ffffff',
+    tie: '#8a9bb0',
+    bottom: { type: 'pants', color: '#2c3e66' },
+    shoes: '#1a1a1a',
+    glasses: { color: '#6d6660' },
+    brows: 'worried',
+    cheeks: true,
+    width: 1.05,
+    prop: { left: 'notebook', right: 'redpen' },
+  },
+  hello: ['よろしくお願いいたします（メモ帳を開く）'],
+  idle: ['今の、メモしてもよろしいですか', '「ちょっといい？」…と。メモしました', '御行…あ、御社では…'], // 8〜12秒ごと
+  lag: ['滑川さ〜ん、待ってくださ〜い', 'あの…どちらへ…？'], // 5m以上遅れたとき
+  greet: ['後任の淀川と申します。よろしくお願いいたします', '（名刺を両手で差し出した）', '滑川の後任で参りました、淀川です'],
+  quiet: ['（会釈）', '（小声で）後任の淀川です…'], // 電話中・傘の間
+  orient: ['は、はい…第1条から…', '（しおりにメモを取っている）', '（しおりの40ページ目に付箋を貼った）'],
+  goal: ['（メモ帳を閉じて、深々とお辞儀）'],
+};
+// 淀川さんにあいさつされた人の反応（kouninLines がない人）
+export const KOUNIN_REACT = ['お、滑川の後任？ …ってことは、滑川もいる？', 'あ、どうもどうも。…滑川〜！ ちょっといい？', '後任さん？ じゃあ引き継ぎ漏れ、滑川に言っとこ'];
+export const DAISHA = {
+  name: '押尾さん',
+  role: '引っ越し業者',
+  nick: '台車の人',
+  trait: '段ボールを積んだ台車で、あなたの足あとをたどってくる。後ろから追ってくる人は台車でドーン。来た道を引き返すと、あなたもひかれる。',
+  tint: '#2f6db5',
+  look: {
+    skin: '#e3ae88',
+    hair: { style: 'short', color: '#2a2320' },
+    top: { type: 'shirt', color: '#2f6db5' },
+    shirt: '#2f6db5',
+    tie: null,
+    bottom: { type: 'pants', color: '#1f4f7a' },
+    shoes: '#ffffff',
+    hat: { color: '#2f6db5', visor: '#1b2340' },
+    brows: 'happy',
+    cheeks: true,
+    width: 1.1,
+  },
+  hello: ['先導、お願いしまーす！'],
+  move: ['台車通りまーす！', 'はいはい、ごめんなさいよー！', '足元失礼しまーす！'], // 動いているとき4〜6秒ごと
+  bump: ['あぶなーい！', 'バックはやめてー！'],
+  blocked: ['あれ、段ボール増えてません？'],
+  hit: ['うわっ、台車！', 'いてて…段ボールが…', '（中身は割り箸だった）'], // はね飛ばされた人の吹き出し
 };
