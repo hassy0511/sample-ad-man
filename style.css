@@ -1114,3 +1114,21 @@ kbd {
 #btn-item b { font-size: 0.62rem; color: var(--ink-2); }
 #btn-item.ready { background: var(--fusen); }
 @media (max-width: 640px) { .hud-items .slot { min-width: 40px; font-size: 0.62rem; } }
+/* 第9章：チームの顔チップ・チームカード・吹き出し */
+.hud-rally.team { align-items: center; gap: 5px; padding: 4px 8px; }
+.hud-rally .tm { position: relative; display: grid; place-items: center; width: 30px; height: 30px; border: 2.5px solid #2e9e5b; border-radius: 50%; background: #fff; }
+.hud-rally .tm img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
+.hud-rally .tm b { position: absolute; right: -6px; bottom: -6px; padding: 0 3px; border-radius: 6px; background: #c0392b; color: #fff; font-size: 0.56rem; line-height: 1.4; }
+.hud-rally .tm.asleep { border-color: #9aa1ab; filter: grayscale(1); }
+.hud-rally .tm.asleep b { background: #6d737d; }
+.hud-rally .tm.left { border-color: #c0392b; }
+.hud-rally .tm.held { border-color: #c0392b; animation: follow-blink-b 0.6s steps(2) infinite; }
+.hud-rally .tm.stolen { border-color: #1b1b1f; }
+.hud-rally .tm.stolen b { background: #1b1b1f; }
+.hud-rally.team em { font-style: normal; font-size: 0.66rem; font-weight: 800; color: var(--ink-soft); white-space: nowrap; }
+.hud-rally.team em.on { color: #c0392b; }
+@keyframes follow-blink-b { 50% { border-color: #ffd84d; } }
+.team-card { border-color: #d9822b; background: #fff6ec; }
+.team-card b em { background: #ff9f43; }
+.bubble.team { background: #fff3e6; border-color: #c46a14; box-shadow: 0 3px 0 #c46a14; }
+.bubble.team::after { border-color: #c46a14; }

@@ -125,7 +125,7 @@ export class Ally {
       c.pose = 'idle';
     }
     const spd = Math.hypot(this.vel.x, this.vel.z);
-    c.speed = this.state === 'follow' ? spd : 0;
+    c.speed = this.state === 'follow' ? spd : this.state === 'stage' ? this.v || 0 : 0;
     if (this.state === 'follow' && spd > 0.3) c.faceDir(this.vel.x, this.vel.z);
     c.root.position.set(this.pos.x, 0, this.pos.z);
     c.update(dt);

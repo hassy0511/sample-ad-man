@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAST, ALLY, SUCCESSOR, DAISHA } from './cast.js';
+import { CAST, ALLY, SUCCESSOR, DAISHA, TEAM } from './cast.js';
 import { ITEMS, BAG_SIZE } from './items.js';
 import { fmtClock } from './util.js';
 
@@ -143,7 +143,7 @@ export class UI {
   }
 
   // --- ステージ説明 ---------------------------------------------------------
-  intro(stage, types, onGo, onBack, hasAlly = false, companion = null) {
+  intro(stage, types, onGo, onBack, hasAlly = false, companion = null, team = null) {
     $('intro-stage').textContent = `${stage.label} ・ ${stage.period} ${fmtClock(stage.start)}`;
     $('intro-title').textContent = stage.title;
     $('intro-brief').textContent = stage.brief;
@@ -178,6 +178,19 @@ export class UI {
         <small>${f.role}　${f.name}</small>
         <span></span>
         <p>${f.trait}</p>`;
+      ul.appendChild(li);
+    }
+    // チーム（第9章）
+    for (const k of team?.order || []) {
+      const m = TEAM[k];
+      const li = document.createElement('li');
+      li.className = 'cast-card ally-card team-card';
+      li.innerHTML = `
+        <img src="${this.portraits[m.portrait] || ''}" alt="" style="--c:#ff9f4333">
+        <b>${m.name}<em>チーム</em></b>
+        <small>${m.role}</small>
+        <span></span>
+        <p>「${m.wake[0]}」</p>`;
       ul.appendChild(li);
     }
     if (hasAlly) {
@@ -323,6 +336,15 @@ export class UI {
       return `<span class="rs${on ? ' on' : ''}${idx >= 0 && i === idx ? ' next' : ''}"><i>${on ? '印' : ''}</i>${r.label}</span>`;
     }).join('');
     $('gp-label').textContent = label;
+  }
+
+  /** チームの顔チップ（第9章。状態が変わったときだけ呼ぶ。null で元のハンコ欄に戻す）。wait は列にいない人の待ち時間 */
+  setTeam(list, wait = 0) {
+    const el = $('hud-rally');
+    el.classList.toggle('team', !!list);
+    if (!list) return;
+    el.innerHTML = list.map((m) => `<span class="tm ${m.state}" title="${m.name}"><img src="${m.img}" alt="">${m.label ? `<b>${m.label}</b>` : ''}</span>`).join('')
+      + `<em class="${wait ? 'on' : ''}">待ち時間 +${wait}分</em>`;
   }
 
   goalPointer(camera, goal, show) {

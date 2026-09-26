@@ -5,6 +5,8 @@ import { VisionCone, RangeRing } from './effects.js';
 import { clamp, damp, pick, wrapAngle } from './util.js';
 import { NOISE } from './suitcase.js';
 import { Conga } from './conga.js';
+import { Trail } from './trail.js';
+import { followTrail } from './team.js';
 
 const TUNING = {
   senpai: { notice: 3.0, chase: 3.25, chaseMax: 4.2, lose: 8, cooldown: 9 },
@@ -31,6 +33,9 @@ const TUNING = {
     join: 2.2, run: 5.0, joinMax: 2.0, base: 3.8, per: 0.2, max: 4.8, hypeAt: 5, space: 0.8,
     gap: 0.9, reacquire: 3.0, lostT: 1.2, lose: 14, back: 6, cooldown: 10,
   },
+  // 第9章：ちゃぶ台返し局長（列の最後尾をねらう）と、ライバル勝田（チームを連れて周回し、仲間を引き抜く）
+  yappari: { patrol: 1.3, notice: 6.5, chase: 3.7, chaseMax: 5.5, lose: 10, freeze: 0.6, cooldown: 10 },
+  rival: { walk: 2.2, spacing: 0.9, stealR: 1.2, stealCD: 8, pushR: 0.55, pause: 0.6, cooldown: 10 },
 };
 
 // 濡れた床を走ると転ぶ速さ
@@ -127,6 +132,20 @@ export class Enemy {
       this.id = spawn.index;
       this.s = 0;
       this.cur = { k: 0, v: -1 };
+    } else if (this.kind === 'yappari') {
+      this.ring = new RangeRing(game.scene, '#c0392b', this.tune.notice);
+      this.state = this.patrol ? 'patrol' : 'idle';
+      if (this.patrol) this.pi = this.nearestWaypoint();
+      this.target = null;
+    } else if (this.kind === 'rival') {
+      this.ring = new RangeRing(game.scene, '#d4af37', this.tune.stealR);
+      this.trail = new Trail(game, null);
+      this.crew = this.cfg.crew.map((look) => {
+        const c = new Character(look, { outline: false });
+        game.scene.add(c.root);
+        return { char: c, pos: new THREE.Vector3(spawn.x, 0, spawn.z), s: 0, cur: { k: 0, v: -1 }, v: 0, freezeT: 0, spinT: 0, invulnT: 0 };
+      });
+      this.rivalReset();
     } else if (this.kind === 'conga') {
       this.bowCD = 0;
       this.tangleCD = 0;
@@ -156,14 +175,15 @@ export class Enemy {
     let bd = Infinity;
     // 動く歩道の上では、流れの上手にある地点は選ばない（戻れないので）
     const bv = this.game.belts?.vx(this.pos.x, this.pos.z) || 0;
-    this.patrol.forEach((p, i) => {
-      if (bv * (p.x - this.pos.x) < 0) return;
+    for (let i = 0; i < this.patrol.length; i++) {
+      const p = this.patrol[i];
+      if (bv * (p.x - this.pos.x) < 0) continue;
       const d = Math.hypot(p.x - this.pos.x, p.z - this.pos.z);
       if (d < bd) {
         bd = d;
         bi = i;
       }
-    });
+    }
     return bi;
   }
 
@@ -262,6 +282,8 @@ export class Enemy {
       case 'kanji':
       case 'zandaka': return this.state === 'guard';
       case 'okuri': return this.state === 'walk'; // 足あとへ駆け寄る途中（join）は捕まえない
+      case 'yappari': return ['patrol', 'idle', 'notice', 'chase', 'return'].includes(this.state);
+      case 'rival': return this.state === 'walk' || this.state === 'idle';
       default: return false;
     }
   }
@@ -276,6 +298,7 @@ export class Enemy {
     else if ((this.kind === 'keiri' || this.kind === 'mtg') && ['patrol', 'stand', 'resume'].includes(this.state)) this.spot();
     else if (this.kind === 'shorui' && this.state === 'idle') this.throwT = 0;
     else if (this.kind === 'doki' && this.state === 'wander') this.dokiNotice();
+    else if (this.kind === 'yappari' && (this.state === 'patrol' || this.state === 'idle')) this.yappariNotice(null);
     else if (this.kind === 'okuri' && this.state === 'stand' && this.game.trail) {
       // 新人くんの「せんぱ〜い！」で、近くの足あとを嗅ぎつける
       const n = this.game.trail.nearestS(this.pos.x, this.pos.z, this.tune.back);
@@ -341,6 +364,8 @@ export class Enemy {
     else if (this.kind === 'kanji' || this.kind === 'zandaka') this.set('guard');
     else if (this.kind === 'shinjin' || this.kind === 'mimi') this.set('return');
     else if (this.kind === 'okuri') this.scatter();
+    else if (this.kind === 'yappari') this.set('return');
+    else if (this.kind === 'rival') this.set(this.patrol ? 'walk' : 'idle');
     else this.set('idle');
   }
 
@@ -357,6 +382,8 @@ export class Enemy {
     else if (this.kind === 'kanji') this.set('guard');
     else if (this.kind === 'doki' || this.kind === 'golf') this.set('wander');
     else if (this.kind === 'shacho') this.set(this.patrol ? 'patrol' : 'stand');
+    else if (this.kind === 'yappari') this.set('return');
+    else if (this.kind === 'rival') this.set(this.patrol ? 'walk' : 'idle');
     this.nearMissed = false;
   }
 
@@ -565,6 +592,12 @@ export class Enemy {
         break;
       case 'okuri':
         pose = this.updateOkuri(dt, dist, hidden);
+        break;
+      case 'yappari':
+        pose = this.updateYappari(dt, dist, hidden);
+        break;
+      case 'rival':
+        pose = this.updateRival(dt, dist);
         break;
       default:
         break;
@@ -1424,14 +1457,208 @@ export class Enemy {
     }
   }
 
+  // --- ちゃぶ台返し局長（列の最後尾をねらう） -----------------------------------
+  /** 目標（仲間 m か、null なら主人公）に気づく */
+  yappariNotice(m) {
+    this.target = m;
+    this.set('notice');
+    this.say(pick(Math.random, this.cfg.notice), 'keiri shout', 1.5);
+    this.game.ui.emote(this, '！');
+    this.game.audio.notice(this.cfg.voice.freq);
+    this.char.play('hop');
+    this.char.setMood('surprised');
+    if (m) {
+      m.freezeT = this.tune.freeze;
+      this.game.team.say(m, '…はい？', 1.2);
+    }
+  }
+
+  updateYappari(dt, dist, hidden) {
+    const T = this.tune;
+    const c = this.char;
+    const team = this.game.team;
+    const grid = this.game.world.grid;
+    const tail = team?.tail();
+    const td = tail ? Math.hypot(tail.pos.x - this.pos.x, tail.pos.z - this.pos.z) : Infinity;
+    c.headYaw = 0;
+    switch (this.state) {
+      case 'patrol':
+      case 'idle': {
+        if (this.state === 'patrol') {
+          const wp = this.patrol[this.pi];
+          if (this.moveTo(wp.x, wp.z, T.patrol, dt) < 0.2) {
+            this.pi = this.patrol.length === 2 ? 1 - this.pi : (this.pi + 1) % this.patrol.length;
+          }
+          c.headYaw = Math.sin(this.t * 1.1) * 0.5;
+        } else {
+          this.stop(dt);
+          c.targetYaw = this.homeYaw;
+        }
+        // 主人公より先に、列の最後尾を見つける（傘は主人公だけを隠す）
+        const near = Math.min(td, hidden ? Infinity : dist);
+        this.ring.update(this.pos.x, this.pos.z, this.cool > 0 ? 0 : clamp(1 - (near - T.notice) / 4, 0, 1) * 0.55);
+        if (this.cool <= 0) {
+          if (td <= T.notice && grid.los(this.pos.x, this.pos.z, tail.pos.x, tail.pos.z)) this.yappariNotice(tail);
+          else if (!hidden && this.sees(T.notice, Math.PI * 2, 0)) this.yappariNotice(null);
+        }
+        return 'idle';
+      }
+      case 'notice': {
+        this.stop(dt);
+        const tg = this.target || this.player;
+        c.faceDir(tg.pos.x - this.pos.x, tg.pos.z - this.pos.z);
+        this.ring.update(this.pos.x, this.pos.z, 0.6);
+        if (this.t > 0.5) this.set('chase');
+        return 'shock';
+      }
+      case 'chase': {
+        this.ring.update(this.pos.x, this.pos.z, 0);
+        // 目標の仲間が列からいなくなったら、新しい最後尾か主人公に切り替える
+        if (this.target && this.target.state !== 'line') this.target = tail;
+        const tg = this.target || this.player;
+        const d = this.target ? td : dist;
+        this.moveTo(tg.pos.x, tg.pos.z, T.chase, dt, this.target ? null : this.game.playerField);
+        if (this.t > T.chaseMax || d > T.lose || (!this.target && hidden)) {
+          this.say(this.giveupLine(), '', 1.6);
+          c.setMood('normal');
+          this.cool = 2.5;
+          this.set('return');
+        }
+        return 'reach';
+      }
+      case 'return': {
+        this.ring.update(this.pos.x, this.pos.z, 0);
+        if (this.patrol) this.pi = this.nearestWaypoint();
+        const wp = this.patrol ? this.patrol[this.pi] : this.home;
+        if (this.moveTo(wp.x, wp.z, 1.7, dt) < 0.25) this.set(this.patrol ? 'patrol' : 'idle');
+        return 'idle';
+      }
+      default:
+        return 'idle';
+    }
+  }
+
+  // --- ライバル勝田（チームを連れて周回し、すれ違いざまに仲間を引き抜く） ---------------
+  /** 巡回ルートの上の、いまいる区間から歩きだす。足あとを張り直してチームを後ろに並べる */
+  rivalReset() {
+    const P = this.patrol;
+    let prev = null;
+    if (P) {
+      this.pi = this.nearestWaypoint();
+      for (let i = 0; i < P.length; i++) {
+        const a = P[i];
+        const b = P[(i + 1) % P.length];
+        const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+        const k = clamp(((this.pos.x - a.x) * (b.x - a.x) + (this.pos.z - a.z) * (b.z - a.z)) / (l * l), 0, 1);
+        if (Math.hypot(a.x + (b.x - a.x) * k - this.pos.x, a.z + (b.z - a.z) * k - this.pos.z) < 0.6) {
+          this.pi = (i + 1) % P.length;
+          prev = a;
+          break;
+        }
+      }
+    }
+    if (prev) this.trail.reset(prev.x, prev.z, this.pos.x, this.pos.z);
+    else this.trail.reset(this.pos.x, this.pos.z);
+    this.state = P ? 'walk' : 'idle';
+    this.stealCD = 2;
+    this.pauseT = 0;
+    this.quipped = false;
+    this.quipT = 0;
+    this.crew.forEach((m, i) => {
+      m.s = this.trail.headS - this.tune.spacing * (i + 1);
+      m.cur.v = -1;
+    });
+    followTrail(this.trail, this.crew, this.tune.spacing, 0, this.tune.walk * 1.5);
+    for (const m of this.crew) {
+      this.trail.sample(m.s, m.cur, _tp);
+      m.char.faceDir(_tp.dx, _tp.dz);
+    }
+    this.crewPlace(0);
+  }
+
+  updateRival(dt, dist) {
+    const T = this.tune;
+    const g = this.game;
+    const P = this.player;
+    const team = g.team;
+    this.stealCD -= dt;
+    this.pauseT -= dt;
+    if (this.quipT > 0) {
+      this.quipT -= dt;
+      if (this.quipT <= 0) this.say(this.cfg.unstealLine, '', 1.8);
+    }
+    if (this.state === 'walk' && this.pauseT <= 0) {
+      const wp = this.patrol[this.pi];
+      if (this.moveTo(wp.x, wp.z, T.walk, dt) < 0.2) this.pi = (this.pi + 1) % this.patrol.length;
+    } else {
+      this.stop(dt);
+    }
+    this.trail.record(this.pos.x, this.pos.z);
+    followTrail(this.trail, this.crew, T.spacing, dt, T.walk * 1.5);
+    this.crewPlace(dt);
+    this.lineT -= dt;
+    if (dist < 5 && this.lineT <= 0 && this.cool <= 0) {
+      this.lineT = 3;
+      this.say(pick(Math.random, this.cfg.notice), '', 1.4);
+    }
+    // 引き抜き
+    let ring = 0;
+    if (team && this.cool <= 0) {
+      if (team.lineNear(this.pos.x, this.pos.z, 4)) ring = 0.35;
+      const m = this.stealCD <= 0 && team.lineNear(this.pos.x, this.pos.z, T.stealR);
+      if (m) {
+        team.steal(m, this);
+        this.say(this.cfg.stealLine.replace('{name}', m.name), '', 2);
+        this.stealCD = T.stealCD;
+        this.pauseT = 0.8;
+        const A = g.ally;
+        if (!this.quipped && A?.state === 'follow' && Math.hypot(A.pos.x - this.pos.x, A.pos.z - this.pos.z) < 3) {
+          this.quipped = true;
+          A.say('僕は滑川先輩についていくと決めてるので！', 2);
+          this.quipT = 1.4;
+        }
+      }
+    }
+    this.ring.update(this.pos.x, this.pos.z, ring);
+    // 勝田のチームは主人公を押しのける（時間は減らない）
+    if (g.state === 'play') {
+      for (const m of this.crew) {
+        if (m.key) continue;
+        const dx = P.pos.x - m.pos.x;
+        const dz = P.pos.z - m.pos.z;
+        const d = Math.hypot(dx, dz);
+        if (d < T.pushR && d > 0.001) {
+          P.pos.x = m.pos.x + (dx / d) * T.pushR;
+          P.pos.z = m.pos.z + (dz / d) * T.pushR;
+          g.world.grid.resolveCircle(P.pos, P.r);
+        }
+      }
+    }
+    this.char.setMood(this.cool > 0 ? 'happy' : 'angry');
+    return 'idle';
+  }
+
+  /** 勝田のチーム（引き抜いた仲間は Team が描く）の位置とアニメーション */
+  crewPlace(dt) {
+    for (const m of this.crew) {
+      if (m.key) continue;
+      const c = m.char;
+      c.speed = m.v;
+      c.pose = 'idle';
+      c.root.position.set(m.pos.x, 0, m.pos.z);
+      if (dt === 0) c.setYaw(c.targetYaw);
+      c.update(dt);
+    }
+  }
+
   /** タイトル画面の背景用：巡回だけする */
   demoUpdate(dt) {
     const c = this.char;
     if (this.state === 'lurk') return;
-    if (this.patrol && (this.kind === 'keiri' || this.kind === 'mtg' || this.kind === 'shacho' || this.kind === 'conga')) {
+    if (this.patrol && (this.kind === 'keiri' || this.kind === 'mtg' || this.kind === 'shacho' || this.kind === 'conga' || this.kind === 'yappari' || this.kind === 'rival')) {
       // 行列はルートを歩くだけ（お辞儀も譲り合いもしない）
       const wp = this.patrol[this.pi];
-      const d = this.moveTo(wp.x, wp.z, this.conga ? this.cfg.conga.speed : this.tune.patrol, dt);
+      const d = this.moveTo(wp.x, wp.z, this.conga ? this.cfg.conga.speed : this.tune.patrol || this.tune.walk, dt);
       if (d < 0.2) this.pi = (this.pi + 1) % this.patrol.length;
       c.headYaw = this.conga ? 0 : Math.sin(c.t * 1.3) * 0.55;
     } else {
@@ -1441,11 +1668,15 @@ export class Enemy {
     if (this.cone) this.cone.visible = false;
     this.ring?.update(this.pos.x, this.pos.z, 0);
     c.pose = this.kind === 'kanji' ? 'dance' : this.kind === 'mimi' ? 'scroll' : (this.conga && !this.patrol) || this.kind === 'okuri' ? 'cheer' : 'idle';
-    this.idle(dt);
+    if (this.crew) {
+      this.trail.record(this.pos.x, this.pos.z);
+      followTrail(this.trail, this.crew, this.tune.spacing, dt, this.tune.walk * 1.5);
+    }
+    this.idle(dt, true);
   }
 
-  /** 位置の反映とアニメーションだけ（会話中など） */
-  idle(dt) {
+  /** 位置の反映とアニメーションだけ（会話中など。crewMoving なら勝田のチームは歩いたまま） */
+  idle(dt, crewMoving = false) {
     if (this.state === 'lurk') return;
     const c = this.char;
     c.root.position.set(this.pos.x, 0, this.pos.z);
@@ -1453,6 +1684,11 @@ export class Enemy {
     c.speed = spd;
     if (spd > 0.25) c.faceDir(this.vel.x, this.vel.z);
     c.update(dt);
+    if (this.crew) {
+      // 会話中などは勝田のチームも止まる
+      if (!crewMoving) for (const m of this.crew) m.v = 0;
+      this.crewPlace(dt);
+    }
   }
 
   // --- 傘ゴルフおじさん -------------------------------------------------------
@@ -1590,5 +1826,11 @@ export class Enemy {
     this.cone?.dispose();
     this.ring?.dispose();
     this.conga?.dispose();
+    this.trail?.dispose();
+    for (const m of this.crew || []) {
+      if (m.key) continue;
+      m.char.root.removeFromParent();
+      for (const x of m.char.meshes) x.geometry.dispose();
+    }
   }
 }

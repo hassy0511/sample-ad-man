@@ -61,6 +61,15 @@ export const LIGHTING = {
     sunDisc: [520, 150, 34, 'rgba(200,215,255,0.35)'], bloom: 0.62, tint: [0.96, 0.98, 1.08], sat: 1.05, vignette: 0.5, screenBoost: 2.3,
     playerLight: true,
   },
+  // 徹夜明けの朝焼け
+  dawn: {
+    exposure: 1.0, hemiSky: '#c9c3ec', hemiGround: '#e0a88a', hemi: 1.05,
+    sun: '#ffc48a', sunI: 2.6, sunDir: [0.95, 0.55, 0.35],
+    bgTop: '#6f7fc4', bgBottom: '#ffc9a0', fog: '#e7c7b8', env: 0.3,
+    cityTop: '#6a78c0', cityMid: '#e9a8b0', cityBottom: '#ffd3a8', cloud: 'rgba(255,210,190,0.7)',
+    far: '#8d88b8', mid: '#716c9c', near: '#565380', windows: 0.2, windowColor: '#ffe1a8',
+    sunDisc: [300, 520, 70, 'rgba(255,190,120,0.9)'], bloom: 0.35, tint: [1.05, 0.99, 1.0], sat: 1.08, vignette: 0.42, screenBoost: 1.5,
+  },
   // 居酒屋の座敷（暖色の明かり）
   izakaya: {
     exposure: 1.12, hemiSky: '#ffd9a8', hemiGround: '#6b4a32', hemi: 0.95,
@@ -208,6 +217,8 @@ export class World {
         else if (c === 'K') this.spawns.fetch = { x: x + 0.5, z: y + 0.5 };
         else if (c === 'T') this.spawns.follower = { x: x + 0.5, z: y + 0.5 };
         else if (c === 'W') (this.spawns.handover ||= []).push({ x: x + 0.5, z: y + 0.5 });
+        else if (c === 'X') (this.spawns.team ||= []).push({ x: x + 0.5, z: y + 0.5 });
+        else if (c === '+') (this.spawns.troubles ||= []).push({ x: x + 0.5, z: y + 0.5 });
         else if (c === '0') (this.spawns.rooms ||= []).push({ x: x + 0.5, z: y + 0.5 });
         else if (ITEM_CODES[c]) (this.spawns.items ||= []).push({ id: ITEM_CODES[c], x: x + 0.5, z: y + 0.5 });
         else if (c === '[') {
@@ -359,6 +370,12 @@ export class World {
           case 'R':
             B.at(cx, cz);
             boxPile(B, this.rng);
+            break;
+          case 'l':
+            this.podium(B, cx, cz);
+            break;
+          case '-':
+            this.pipeChairs(B, cx, cz);
             break;
           case 'm':
           case 'B':
@@ -1033,6 +1050,32 @@ export class World {
     const desk = { x: cx, z: cz - 0.95, front: { x: cx, z: cz + 1.1 } };
     this.spawns.desks.push(desk);
     this.spawns.boss ??= desk;
+  }
+
+  /** 演台（発表者は南側に立つ。天板は南へ傾け、北の審査員側に金色のロゴ板） */
+  podium(B, cx, cz) {
+    B.at(cx, cz);
+    B.box('matte', '#6d4b35', 0, 0.53, 0, 0.7, 1.06, 0.5);
+    B.box('matte', '#5a3c2a', 0, 0.03, 0, 0.78, 0.06, 0.58);
+    B.box('gloss', '#7d5a42', 0, 1.1, 0.02, 0.8, 0.05, 0.6, 0.22);
+    B.box('gloss', '#d4af37', 0, 0.72, -0.255, 0.42, 0.24, 0.02);
+    B.box('matte', '#fbfbf7', 0, 1.12, 0.08, 0.3, 0.012, 0.22, 0.22);
+    // 細いマイク
+    B.cyl('metal', '#9aa1ab', 0.22, 1.28, -0.05, 0.008, 0.008, 0.36, 6, 0.35);
+    B.ball('matte', '#1b1b1f', 0.22, 1.45, 0.01, 0.035, 0.045, 0.035, 8);
+  }
+
+  /** パイプ椅子の列（1マスに2脚。いつも北向き） */
+  pipeChairs(B, cx, cz) {
+    for (const sx of [-0.25, 0.25]) {
+      B.at(cx + sx, cz, Math.PI);
+      B.box('matte', '#3a4150', 0, 0.44, 0.02, 0.38, 0.04, 0.36);
+      B.box('matte', '#3a4150', 0, 0.72, -0.17, 0.38, 0.26, 0.03, -0.08);
+      for (const lx of [-0.17, 0.17]) {
+        B.box('metal', '#9aa1ab', lx, 0.22, 0.14, 0.02, 0.44, 0.02);
+        B.box('metal', '#9aa1ab', lx, 0.44, -0.16, 0.02, 0.88, 0.02, -0.08);
+      }
+    }
   }
 
   whiteboard(B, box) {

@@ -48,9 +48,16 @@ export const ITEMS = {
     hint: '使うと、後ろの足あとをふさげる！',
     color: '#c89b5a',
   },
+  hachimaki: {
+    name: '必勝ハチマキ',
+    short: 'ハチマキ',
+    desc: '使うと6秒間、チーム全員が気合いで捕まらない（引き抜かれもしない）。列がぎゅっと詰まる。',
+    hint: '使うと、チーム全員が6秒間捕まらない！',
+    color: '#e0402f',
+  },
 };
 
-export const ITEM_CODES = { E: 'energy', U: 'umbrella', O: 'omiyage', S: 'shoecover', F: 'baramaki', '@': 'karaoke', '*': 'box' };
+export const ITEM_CODES = { E: 'energy', U: 'umbrella', O: 'omiyage', S: 'shoecover', F: 'baramaki', '@': 'karaoke', '*': 'box', '!': 'hachimaki' };
 export const BAG_SIZE = 2;
 
 /** 床に置くアイテムの見た目 */
@@ -113,6 +120,21 @@ export function itemMesh(id) {
     const tilt = new THREE.Group();
     tilt.add(board, tape);
     tilt.rotation.x = 0.45;
+    g.add(tilt);
+  } else if (id === 'hachimaki') {
+    // 白い鉢巻き（赤い日の丸と結び目）
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 6, 24), std('#fbfbf7'));
+    band.rotation.x = Math.PI / 2;
+    const sun = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16), std('#e0402f'));
+    sun.position.set(0, 0, 0.236);
+    const knot = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.05), std('#fbfbf7'));
+    knot.position.set(0, 0, -0.23);
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.02), std('#fbfbf7'));
+    tail.position.set(0.04, -0.07, -0.25);
+    tail.rotation.z = 0.4;
+    const tilt = new THREE.Group();
+    tilt.add(band, sun, knot, tail);
+    tilt.rotation.x = 0.25;
     g.add(tilt);
   } else {
     const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.18, 0.3), std('#f3ead8'));

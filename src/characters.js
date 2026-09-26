@@ -297,6 +297,16 @@ function addProp(b, name, side) {
       b.add(sph(), '#ffd84d', M(hx + 0.04, hy + 0.03, 0.21, 0, 0, 0, 0.045, 0.045, 0.045));
       b.add(sph(), '#f5a3c7', M(hx - 0.04, hy + 0.03, 0.19, 0, 0, 0, 0.045, 0.045, 0.045));
       break;
+    case 'chabudai':
+      // 小脇に抱えた小さなちゃぶ台（天板は縦向き）
+      b.add(cyl(0.2, 0.2, 0.03, 18), '#8a5a3a', M(hx + side * -0.05, hy - 0.02, 0.02, 0, 0, Math.PI / 2));
+      for (const [py, pz] of [[0.09, 0.09], [0.09, -0.07], [-0.09, 0.09], [-0.09, -0.07]]) b.add(cyl(0.012, 0.012, 0.12, 6), '#5a3c2a', M(hx + side * 0.03, hy - 0.02 + py, 0.02 + pz, 0, 0, Math.PI / 2));
+      break;
+    case 'edrink':
+      // エナドリ缶
+      b.add(cyl(0.045, 0.045, 0.13, 12), '#1f4fb8', M(hx, hy - 0.03, 0.06));
+      b.add(cyl(0.046, 0.046, 0.04, 12), '#b9f23a', M(hx, hy - 0.02, 0.06));
+      break;
     case 'bag':
       b.add(rbox(0.09, 0.24, 0.34, 0.03), '#3b2a22', M(hx, hy - 0.16, 0));
       b.add(torus(0.05, 0.012, 6, 12, Math.PI), '#2a1d17', M(hx, hy - 0.03, 0, 0, Math.PI / 2, 0));
@@ -537,11 +547,11 @@ export class Character {
     const breathe = 1 + Math.sin(t * 2.4) * 0.012 * (1 - a);
 
     // 持ち物による腕の基本姿勢
-    const carryL = { papers: -0.9, notebook: -0.75, clipboard: -0.7, list: -0.7, folder: 0.05, laptop: 0.05, bag: 0, bouquet: -0.8 }[this.propL];
-    const carryR = { mug: -0.55, redpen: -0.45, wallet: -0.3, penlight: -0.5, phone: -0.95, kasa: -0.15, mop: -0.45, can: -0.55, tube: -0.4, hankie: -0.9 }[this.propR];
+    const carryL = { papers: -0.9, notebook: -0.75, clipboard: -0.7, list: -0.7, folder: 0.05, laptop: 0.05, bag: 0, bouquet: -0.8, chabudai: 0.05 }[this.propL];
+    const carryR = { mug: -0.55, redpen: -0.45, wallet: -0.3, penlight: -0.5, phone: -0.95, kasa: -0.15, mop: -0.45, can: -0.55, tube: -0.4, hankie: -0.9, edrink: -0.55 }[this.propR];
     if (carryL !== undefined) {
       armL = carryL + armL * 0.25;
-      if (this.propL === 'folder' || this.propL === 'laptop') armLz = 0.02;
+      if (this.propL === 'folder' || this.propL === 'laptop' || this.propL === 'chabudai') armLz = 0.02;
     }
     if (carryR !== undefined) armR = carryR + armR * 0.35;
 

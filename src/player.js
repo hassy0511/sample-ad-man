@@ -53,6 +53,7 @@ export class Player {
     this.noiseT = 0;
     this.onWet = false;
     this.bowing = false;
+    this.presenting = false; // プレゼン本番で演台に立っている
     this.attached = null; // 行列につながっている間 { line, mode: 'ride' | 'drag', presses, t }
     this.dashN = 0; // ダッシュした回数（行列のスルッ！を1回だけ数える）
     this.facing = new THREE.Vector2(0, -1);
@@ -182,6 +183,8 @@ export class Player {
       this.game.scatterGifts();
     } else if (id === 'karaoke') {
       this.game.dropLure(this.pos.x, this.pos.z);
+    } else if (id === 'hachimaki') {
+      this.game.onHachimaki();
     }
     this.game.audio.sparkle();
     this.game.onItemsChanged();
@@ -204,6 +207,7 @@ export class Player {
     this.phoneCD = PHONE_COOLDOWN;
     this.game.audio.phone?.();
     this.game.ui.bubble(this, pick(['あ、もしもし！お世話になっております！', 'はい、はい、ただいま向かっております！', 'もしもし〜！はい、その件ですね！']), 'player', 2.2);
+    this.game.team?.onPhone(this.pos.x, this.pos.z);
   }
 
   update(dt, input) {
@@ -311,7 +315,7 @@ export class Player {
     c.speed = this.dashT > 0 || this.slipT > 0 ? 0 : spd;
     if (spd > 0.3) c.faceDir(this.vel.x, this.vel.y);
     if (this.slipT > 0) c.pose = 'down';
-    else if (!this.frozen) c.pose = this.attached ? 'conga' : this.phoneT > 0 ? 'phone' : this.bowing && Math.hypot(this.vel.x, this.vel.y) < 0.9 ? 'bow' : 'idle';
+    else if (!this.frozen) c.pose = this.attached ? 'conga' : this.phoneT > 0 ? 'phone' : this.presenting && spd < 0.5 ? 'talk' : this.bowing && Math.hypot(this.vel.x, this.vel.y) < 0.9 ? 'bow' : 'idle';
     this.phoneMesh.visible = this.phoneT > 0;
     this.umbrella.visible = this.umbrellaT > 0;
     if (this.umbrella.visible) this.umbrella.rotation.y += dt * 1.5;
