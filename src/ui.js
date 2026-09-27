@@ -226,6 +226,7 @@ export class UI {
       $('hud-title').textContent = stage.title;
       this.setDeadline(stage.deadline);
       $('gp-label').textContent = stage.goalLabel;
+      this.gpHalf = 0;
       $('hud-rally').hidden = !(stage.rally || stage.goalType === 'handover' || stage.team);
       this.goalTop = $('hud-rally').hidden ? 0 : 70; // ハンコ欄の下まで、目標の札を下げる
       $('dash-hint').classList.remove('fade');
@@ -310,6 +311,7 @@ export class UI {
 
   setGoalLabel(text) {
     $('gp-label').textContent = text;
+    this.gpHalf = 0;
   }
 
   /** HUD の下の帯（発車メロディなど）。null で消す */
@@ -343,6 +345,7 @@ export class UI {
       return `<span class="rs${on ? ' on' : ''}${idx >= 0 && i === idx ? ' next' : ''}"><i>${on ? '印' : ''}</i>${r.label}</span>`;
     }).join('');
     $('gp-label').textContent = label;
+    this.gpHalf = 0;
   }
 
   /** チームの顔チップ（第9章。状態が変わったときだけ呼ぶ。null で元のハンコ欄に戻す）。wait は列にいない人の待ち時間 */
@@ -370,7 +373,11 @@ export class UI {
     const top = this.goalTop || 0;
     const on = !behind && x > margin && x < W - margin && y > margin + 60 + top && y < H - margin;
     el.style.display = 'flex';
+    // ラベルが画面の端で切れないよう、幅の半分だけ内側に寄せる（幅は文言が変わったときだけ測る）
+    if (!this.gpHalf) this.gpHalf = el.offsetWidth / 2 + 8;
+    const hw = Math.min(this.gpHalf, W / 2);
     if (on) {
+      x = Math.min(Math.max(x, hw), W - hw);
       el.style.transform = `translate(${x}px, ${y - 40}px) translate(-50%, -100%)`;
       el.querySelector('.gp-arrow').style.transform = 'rotate(90deg)';
     } else {
@@ -385,7 +392,7 @@ export class UI {
       const sx = (W / 2 - margin) / Math.abs(dx || 1);
       const sy = (H / 2 - margin - 30) / Math.abs(dy || 1);
       const s = Math.min(sx, sy);
-      x = cx + dx * s;
+      x = Math.min(Math.max(cx + dx * s, hw), W - hw);
       y = Math.max(cy + dy * s + 15, margin + 45 + top);
       el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       el.querySelector('.gp-arrow').style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;

@@ -1,5 +1,5 @@
 // オフラインでも遊べるよう、ゲームのファイルをキャッシュする
-const VERSION = 'surusuru-v15';
+const VERSION = 'surusuru-v16';
 const APP = [
   './', 'index.html', 'style.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
   'src/main.js', 'src/levels.js', 'src/cast.js', 'src/world.js', 'src/characters.js', 'src/enemies.js',
