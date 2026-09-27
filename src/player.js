@@ -63,6 +63,11 @@ export class Player {
     this.char.head.add(this.stack);
     this.stackMat = new THREE.MeshStandardMaterial({ color: '#fbfbf7', roughness: 0.65 });
     this.stackGeo = new THREE.BoxGeometry(0.34, 0.05, 0.42);
+    // 第10章：餞別は書類の代わりに、紙袋・花束・菓子箱（色つきの箱）を積む
+    if (game.stage.gifts) {
+      this.giftGeo = new THREE.BoxGeometry(0.3, 0.15, 0.24);
+      this.giftMats = ['#c89b5a', '#f5a3c7', '#e0402f', '#f4f1e8'].map((color) => new THREE.MeshStandardMaterial({ color, roughness: 0.7 }));
+    }
     this.phoneMesh = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.13, 0.018), new THREE.MeshStandardMaterial({ color: '#1b1d22', roughness: 0.3 }));
     this.phoneMesh.position.set(0, -0.36, 0.05);
     this.phoneMesh.visible = false;
@@ -112,10 +117,10 @@ export class Player {
     for (let i = 0; i < n; i++) {
       this.papers++;
       this.totalPapers++;
-      if (this.stack.children.length < 9) {
-        const m = new THREE.Mesh(this.stackGeo, this.stackMat);
+      if (this.stack.children.length < (this.giftGeo ? 7 : 9)) {
         const k = this.stack.children.length;
-        m.position.set((Math.random() - 0.5) * 0.06, k * 0.055, (Math.random() - 0.5) * 0.06);
+        const m = this.giftGeo ? new THREE.Mesh(this.giftGeo, this.giftMats[this.totalPapers % this.giftMats.length]) : new THREE.Mesh(this.stackGeo, this.stackMat);
+        m.position.set((Math.random() - 0.5) * 0.06, this.giftGeo ? 0.05 + k * 0.15 : k * 0.055, (Math.random() - 0.5) * 0.06);
         m.rotation.y = (Math.random() - 0.5) * 0.6;
         m.castShadow = true;
         this.stack.add(m);
@@ -352,6 +357,8 @@ export class Player {
     this.ringMat.dispose();
     this.stackMat.dispose();
     this.stackGeo.dispose();
+    this.giftGeo?.dispose();
+    for (const m of this.giftMats || []) m.dispose();
     for (const m of this.char.meshes) m.geometry.dispose();
   }
 }

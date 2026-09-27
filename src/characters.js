@@ -626,6 +626,15 @@ export class Character {
         rigRotX = 0.5;
         armL = armR = 0.1;
         break;
+      case 'doze':
+        // 立ったまま船をこぐ（時差ボケ）
+        armL = armR = 0.12;
+        armLz = 0.05;
+        armRz = -0.05;
+        headX = 0.42 + Math.max(0, Math.sin(t * 2.4)) * 0.28;
+        headZ = Math.sin(t * 1.2) * 0.1;
+        lean = 0.1 + Math.sin(t * 1.2) * 0.04;
+        break;
       case 'conga':
         // 前の人の肩に手を置いて歩く
         armL = armR = -1.35;

@@ -615,6 +615,8 @@ kbd {
 .bubble.shout { font-size: 1.15rem; }
 .bubble.shout .in { animation: pop 0.22s cubic-bezier(0.3, 1.6, 0.5, 1) both, jitter 0.12s linear 0.22s infinite; }
 .bubble.player { background: var(--fusen); }
+.bubble.zzz { background: #e9ecff; border-color: #4a5a9a; color: #34437e; box-shadow: 0 3px 0 #4a5a9a; font-style: italic; }
+.bubble.zzz::after { border-color: #4a5a9a; }
 .emote {
   position: absolute;
   left: 0;
@@ -676,6 +678,15 @@ kbd {
   opacity: 0;
   background: radial-gradient(ellipse at center, transparent 45%, rgba(214, 38, 24, 0.55) 100%);
   transition: opacity 0.2s;
+}
+#doze {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 20%, rgba(8, 10, 24, 0.6) 55%, rgba(8, 10, 24, 0.96) 100%);
+  transition: opacity 0.25s;
 }
 #flash { position: absolute; inset: 0; pointer-events: none; z-index: 6; opacity: 0; }
 #flash.go { animation: flash 0.5s ease-out; }
@@ -1138,3 +1149,41 @@ kbd {
 .team-card b em { background: #ff9f43; }
 .bubble.team { background: #fff3e6; border-color: #c46a14; box-shadow: 0 3px 0 #c46a14; }
 .bubble.team::after { border-color: #c46a14; }
+
+/* --------------------------------------------------------------- 第1部のエンディング */
+.ending-screen { grid-template-columns: minmax(0, 1fr); justify-items: center; background: #0b0f1c; color: #f4f1e8; cursor: pointer; animation: ending-in 1.2s ease-out both; }
+.ending { width: min(760px, 100%); min-width: 0; text-align: center; }
+.ending-kicker { margin: 0 0 6px; font-weight: 800; letter-spacing: 0.2em; color: #c9d2ea; opacity: 0; animation: ending-rise 1s ease-out 0.6s both; }
+.ending-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(2.8rem, 12vw, 5.2rem);
+  font-weight: 400;
+  line-height: 1.1;
+  color: #fff;
+  opacity: 0;
+  animation: ending-rise 1.2s ease-out 1.2s both;
+}
+.ending-faces {
+  margin: clamp(18px, 5vh, 40px) 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  opacity: 0;
+  animation: ending-fade 1.5s ease-out 2s both;
+}
+.ending-track { display: flex; gap: 14px; width: max-content; margin: 0; padding: 0; list-style: none; animation: ending-scroll 40s linear infinite; }
+.ending-track li { display: grid; justify-items: center; gap: 4px; width: 74px; }
+.ending-track img { width: 64px; height: 64px; border-radius: 50%; background: #1f2740; border: 2px solid #3a4666; }
+.ending-track span { font-size: 0.66rem; line-height: 1.2; color: #aab4cf; }
+.ending-next { margin: 0; font-family: var(--display); font-size: clamp(1.2rem, 5vw, 1.7rem); color: var(--fusen); opacity: 0; animation: ending-rise 1s ease-out 3.4s both; }
+.ending-hint { margin: 22px 0 0; font-size: 0.8rem; color: #8d97b3; opacity: 0; animation: ending-fade 1s ease-out 4.4s both; }
+.ending-hint kbd { color: #f4f1e8; background: transparent; border-color: #5a6482; box-shadow: none; }
+@keyframes ending-in { from { background: rgba(11, 15, 28, 0); } }
+@keyframes ending-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes ending-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ending-scroll { to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) {
+  .ending-track { animation: none; flex-wrap: wrap; width: auto; justify-content: center; }
+  .ending-track .dup { display: none; }
+}

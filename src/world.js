@@ -207,6 +207,8 @@ export class World {
   parse() {
     const { grid } = this;
     const order = {};
+    // ステージごとに敵の記号の意味を上書きできる（第10章）
+    const codes = this.stage.codes ? { ...ENEMY_CODES, ...this.stage.codes } : ENEMY_CODES;
     for (let y = 0; y < this.H; y++) {
       for (let x = 0; x < this.W; x++) {
         const c = grid.at(x, y);
@@ -229,9 +231,9 @@ export class World {
           const fz = y + dz + 0.5;
           this.doors.push({ x: x + 0.5, z: y + 0.5, fx, fz, dx, dz, pivot: null, open: 0, target: 0 });
           this.spawns.enemies.push({ code: '[', type: this.stage.doors?.[i] || 'yukata', x: fx, z: fz, index: i, door: i });
-        } else if (ENEMY_CODES[c]) {
+        } else if (codes[c]) {
           order[c] = order[c] || 0;
-          this.spawns.enemies.push({ code: c, type: ENEMY_CODES[c], x: x + 0.5, z: y + 0.5, index: order[c]++ });
+          this.spawns.enemies.push({ code: c, type: codes[c], x: x + 0.5, z: y + 0.5, index: order[c]++ });
         }
       }
     }
@@ -264,7 +266,7 @@ export class World {
   }
 
   buildFloor() {
-    const aoSet = new Set(['#', 'k', 'x', 'v', 'c', 'e', 'D', 'h', 'g', 's', 'w', '[', ']', 'R']);
+    const aoSet = new Set(['#', 'k', 'x', 'v', 'c', 'e', 'D', 'h', 'g', 's', 'w', '[', ']', 'R', 'V', '{']);
     const tex = this.track(floorTexture(this.grid, this.floorType, (x, y) => aoSet.has(this.grid.at(x, y))));
     tex.anisotropy = this.maxAniso;
     const mat = this.track(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0 }));
@@ -341,6 +343,12 @@ export class World {
             break;
           case 's':
             this.shredder(B, x, y);
+            break;
+          case 'V':
+            this.parcelCounter(B, x, y);
+            break;
+          case '{':
+            this.passportBooth(B, x, y);
             break;
           case 'v':
             this.vending(B, x, y);
@@ -847,6 +855,36 @@ export class World {
     label.rotation.y = yaw;
     this.group.add(label);
     this.shredders.push({ x: x + 0.5, z: y + 0.5, yaw });
+  }
+
+  /** 宅配便カウンター（第10章）。シュレッダーと同じく、前に立つと頭の上の餞別を全部下ろせる */
+  parcelCounter(B, x, y) {
+    const yaw = this.facing(x, y);
+    B.at(x + 0.5, y + 0.5, yaw);
+    B.rbox('matte', '#f2efe9', 0, 0.5, 0, 0.94, 1.0, 0.6, 0.03);
+    B.box('matte', '#2e9e5b', 0, 1.01, 0, 0.98, 0.04, 0.64);
+    B.box('matte', '#2e9e5b', 0, 0.12, 0.302, 0.94, 0.2, 0.01);
+    // カウンターの上に、送る前の段ボールと伝票
+    B.box('matte', '#c8a165', -0.22, 1.18, -0.05, 0.36, 0.3, 0.3, 0, 0.2);
+    B.box('matte', '#e8d9b0', -0.22, 1.335, -0.05, 0.08, 0.01, 0.3, 0, 0.2);
+    B.box('matte', '#ffffff', 0.24, 1.035, 0.1, 0.22, 0.01, 0.16, 0, -0.15);
+    B.box('glow', '#ffd84d', 0.3, 0.9, 0.303, 0.06, 0.06, 0.01);
+    const label = new THREE.Mesh(this.track(new THREE.PlaneGeometry(0.8, 0.2)),
+      this.track(new THREE.MeshBasicMaterial({ map: this.track(textTexture('宅配便（海外）', { w: 384, h: 96, font: '800 44px "M PLUS Rounded 1c", sans-serif', bg: '#ffd84d', radius: 12 })) })));
+    label.position.set(0, 0.62, 0.304).applyMatrix4(B.base);
+    label.rotation.y = yaw;
+    this.group.add(label);
+    this.shredders.push({ x: x + 0.5, z: y + 0.5, yaw, kind: 'parcel' });
+  }
+
+  /** 出国審査のブース（第10章）。低い置物なので視線はさえぎらない */
+  passportBooth(B, x, y) {
+    B.at(x + 0.5, y + 0.5);
+    B.rbox('matte', '#e9eef4', 0, 0.55, 0, 0.9, 1.1, 0.9, 0.05);
+    B.box('matte', '#2f6db5', 0, 1.12, 0, 0.94, 0.05, 0.94);
+    B.box('glass', '#ffffff', 0, 1.45, 0.3, 0.8, 0.6, 0.03);
+    B.box('matte', '#3b404b', 0, 1.2, -0.1, 0.3, 0.2, 0.03, -0.3);
+    B.box('glow', '#58e6a0', 0, 1.2, 0.46, 0.2, 0.06, 0.01);
   }
 
   vending(B, x, y) {

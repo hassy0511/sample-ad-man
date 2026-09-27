@@ -20,12 +20,13 @@ import { Suitcase } from './suitcase.js';
 import { Belts } from './belts.js';
 import { Trail, Follower } from './trail.js';
 import { Team, TEAM_TUNE } from './team.js';
+import { Jetlag } from './jetlag.js';
 import { RangeRing } from './effects.js';
 import { clamp, damp, lerp, smooth, pick, textTexture } from './util.js';
 
 const RANK_ORDER = ['C', 'B', 'A', 'S'];
 const PITCH = 0.93;
-const TEMPO = { 1: 108, 2: 116, 3: 124, 13: 112, 14: 120, 15: 128, 16: 120, 17: 128, 18: 108, 19: 120, 20: 112, 21: 130, 22: 112, 23: 118, 24: 128, 25: 118, 26: 126, 27: 136 };
+const TEMPO = { 1: 108, 2: 116, 3: 124, 13: 112, 14: 120, 15: 128, 16: 120, 17: 128, 18: 108, 19: 120, 20: 112, 21: 130, 22: 112, 23: 118, 24: 128, 25: 118, 26: 126, 27: 136, 28: 116, 29: 132, 30: 124 };
 // 行列に巻き込める人の動き方（社長・書類おじさん・清掃員・ティッシュ配りなどは巻き込めない）
 const ABSORB = new Set(['senpai', 'warikomi', 'doki', 'shinjin', 'kanji', 'mtg', 'keiri']);
 const _dashDir = new THREE.Vector2();
@@ -134,6 +135,9 @@ class Game {
       } else if (this.state === 'intro' && e.code === 'Enter') {
         e.preventDefault();
         this.startStage();
+      } else if (this.state === 'ending' && e.code === 'Enter') {
+        e.preventDefault();
+        this.closeEnding();
       }
     });
     this.input.on('pause', () => {
@@ -369,6 +373,8 @@ class Game {
 
     // 出張のキャリーケース（音を出す）
     this.suitcase = stage.suitcase ? new Suitcase(this) : null;
+    // 時差ボケ（第10章）
+    this.jet = stage.jetlag && !demo ? new Jetlag(this, stage.jetlag) : null;
     this.noiseTip = false;
     this.beltTip = false;
     this.hurryShown = false;
@@ -488,6 +494,8 @@ class Game {
     this.weather = null;
     this.suitcase?.dispose();
     this.suitcase = null;
+    this.jet?.dispose();
+    this.jet = null;
     this.belts?.dispose();
     this.belts = null;
     this.congas = [];
@@ -601,7 +609,8 @@ class Game {
   // -------------------------------------------------------------------------
   // 画面遷移
   // -------------------------------------------------------------------------
-  toTitle(ending = false) {
+  /** ending = 章の最後から戻る（背景を章の最後のステージにする）。toast = 章クリアの表示と紙吹雪 */
+  toTitle(ending = false, toast = ending) {
     this.state = 'title';
     this.ui.hud(false);
     this.ui.closeDialogue();
@@ -618,7 +627,7 @@ class Game {
         this.audio.click();
         this.toIntro(i);
       });
-      if (ending) {
+      if (toast) {
         this.ui.toast(CHAPTERS.find((c) => c.id === ch)?.ending || '本日の業務、完了！');
         this.fx.confettiBurst(this.player.pos.x, this.player.pos.z, 140);
         this.audio.clear();
@@ -806,7 +815,19 @@ class Game {
     for (const e of this.enemies) e.update(dt);
     // 敵の処理の中で会話が始まった（二次会電車がカラオケに着いた）
     if (this.state !== 'play') return;
-    P.frozen = false;
+    // 時差ボケ：居眠り中は入力を受けつけない（押されたダッシュ等は捨てる）
+    let dozing = false;
+    if (this.jet) {
+      this.jet.update(dt);
+      dozing = this.jet.dozing;
+      if (dozing) {
+        this.input.takeDash();
+        this.input.takePhone?.();
+        this.input.takeItem?.();
+        P.char.pose = 'doze';
+      }
+    }
+    P.frozen = dozing;
     P.update(dt, this.input);
     this.boss?.update(dt);
     // 足あと：記録 → 同行者 → 床の足あと（いちばん後ろのたどり手から）
@@ -840,7 +861,8 @@ class Game {
         P.boostT = 6;
         this.fx.sparkle(p.x, 0.8, p.z, 14);
         this.audio.sparkle();
-        this.ui.float(P.pos.x, 2.3, P.pos.z, '缶コーヒー！ スピードUP', 'good');
+        this.jet?.onCoffee();
+        this.ui.float(P.pos.x, 2.3, P.pos.z, this.jet ? 'コーヒー！ 目が覚めた' : '缶コーヒー！ スピードUP', 'good');
       }
     }
 
@@ -903,9 +925,16 @@ class Game {
       this.shredMarks[i].material.opacity = P.papers > 0 ? 0.55 + Math.sin(this.time * 6) * 0.25 : 0;
       if (P.papers > 0 && d < 1.35) {
         const n = P.clearPapers();
-        this.fx.shred(s.x, s.z);
-        this.audio.shred();
-        this.ui.float(P.pos.x, 2.2, P.pos.z, `シュレッダー！ 書類${n}束 処分`, 'good');
+        if (s.kind === 'parcel') {
+          // 宅配便カウンター（第10章）：餞別を海外へ送る
+          this.fx.sparkle(s.x, 1.2, s.z, 16);
+          this.audio.sparkle();
+          this.ui.float(P.pos.x, 2.2, P.pos.z, `宅配便で送った！ 餞別${n}個`, 'good');
+        } else {
+          this.fx.shred(s.x, s.z);
+          this.audio.shred();
+          this.ui.float(P.pos.x, 2.2, P.pos.z, `シュレッダー！ 書類${n}束 処分`, 'good');
+        }
       }
     }
 
@@ -1066,6 +1095,7 @@ class Game {
 
   onPlayerDash() {
     this.suitcase?.onDash();
+    this.jet?.onDash();
   }
 
   /** キャリーケースなどの物音。半径 r に入った人が振り向き、近くの客室のドアが開く */
@@ -1144,7 +1174,7 @@ class Game {
     this.clock += e.cfg.penalty;
     this.fx.papers(P.pos.x, 1.6, P.pos.z, 5, 0.6);
     this.audio.paperHit();
-    this.ui.float(P.pos.x, 2.3, P.pos.z, `-${e.cfg.penalty}分　${e.kind === 'handout' ? 'チラシ' : '書類'}+1`, 'minus');
+    this.ui.float(P.pos.x, 2.3, P.pos.z, `-${e.cfg.penalty}分　${e.cfg.papersLabel || (e.kind === 'handout' ? 'チラシ' : '書類')}+1`, 'minus');
   }
 
   paperLanded(to, enemy) {
@@ -1724,6 +1754,7 @@ class Game {
     // お見送り隊は、会話が始まったら（身代わりのときも）満足して解散する
     this.scatterOkuri();
     if (!opt.skipAlly && this.tryAlly(e)) return;
+    this.jet?.reset();
     const P = this.player;
     if (!opt.noRecord) {
       this.record('caught', e.type);
@@ -2440,6 +2471,7 @@ class Game {
     this.world.goalFx.group.visible = false;
     this.ui.goalPointer(this.camera, null, false);
     this.ui.aura(0);
+    this.jet?.reset();
     this.ui.banner(null);
     this.audio.setTension(false);
     // goalEnd で演出だけ差し替えられる（客室がゴールの fetch など）
@@ -2595,7 +2627,8 @@ class Game {
     }, {
       next: () => {
         this.audio.click();
-        if (last) this.toTitle(true);
+        if (last && CHAPTERS.find((c) => c.id === stage.chapter)?.partEnd) this.showEnding();
+        else if (last) this.toTitle(true);
         else this.toIntro(this.stageIndex + 1);
       },
       retry: () => {
@@ -2608,6 +2641,29 @@ class Game {
       },
     });
     this.cam.goalScale = 0.8;
+  }
+
+  // --- 第1部のエンディング -------------------------------------------------------
+  /** 第1部の最後のステージのあと：これまで出会った人の顔が流れて「ニューヨーク編へ続く」 */
+  showEnding() {
+    this.state = 'ending';
+    this.ui.hud(false);
+    const faces = [{ key: 'boss', name: BOSS.name }, { key: 'ally', name: ALLY.name }];
+    for (const [k, c] of Object.entries(CAST)) if (this.stats.met[k]) faces.push({ key: k, name: c.name });
+    // 名簿にまだ少ししかいないとき（章を飛ばして遊んだ場合など）は全員を出す
+    if (faces.length < 12) for (const [k, c] of Object.entries(CAST)) if (!this.stats.met[k]) faces.push({ key: k, name: c.name });
+    for (const k of ['shitsucho', 'ny_chief']) faces.push({ key: k, name: GOAL_NPC[k].name });
+    faces.push({ key: 'successor', name: SUCCESSOR.name }, { key: 'team_mamiya', name: TEAM.mamiya.name });
+    this.ui.ending(faces, () => this.closeEnding());
+    this.audio.clear();
+    this.audio.startMusic('title', 84);
+  }
+
+  closeEnding() {
+    if (this.state !== 'ending') return;
+    this.state = 'title';
+    this.audio.click();
+    this.toTitle(true, false);
   }
 
   fail() {
@@ -2623,6 +2679,7 @@ class Game {
     P.char.setMood('surprised');
     this.ui.toast('時間切れ', 'stamp-toast');
     this.ui.aura(0);
+    this.jet?.reset();
     this.ui.banner(null);
     this.audio.stopMusic();
     this.audio.fail();

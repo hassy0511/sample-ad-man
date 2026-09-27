@@ -1,11 +1,11 @@
 // オフラインでも遊べるよう、ゲームのファイルをキャッシュする
-const VERSION = 'surusuru-v14';
+const VERSION = 'surusuru-v15';
 const APP = [
   './', 'index.html', 'style.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
   'src/main.js', 'src/levels.js', 'src/cast.js', 'src/world.js', 'src/characters.js', 'src/enemies.js',
   'src/player.js', 'src/nav.js', 'src/effects.js', 'src/textures.js', 'src/post.js', 'src/audio.js',
   'src/ui.js', 'src/input.js', 'src/util.js', 'src/pwa.js', 'src/ally.js', 'src/items.js', 'src/traffic.js', 'src/rain.js',
-  'src/suitcase.js', 'src/belts.js', 'src/conga.js', 'src/trail.js', 'src/team.js',
+  'src/suitcase.js', 'src/belts.js', 'src/conga.js', 'src/trail.js', 'src/team.js', 'src/jetlag.js',
 ];
 
 self.addEventListener('install', (e) => {

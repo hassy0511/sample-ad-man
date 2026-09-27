@@ -29,7 +29,7 @@ export class UI {
   }
 
   show(id) {
-    for (const s of ['screen-title', 'screen-intro', 'screen-result', 'screen-pause', 'screen-book']) $(s).hidden = s !== id;
+    for (const s of ['screen-title', 'screen-intro', 'screen-result', 'screen-pause', 'screen-book', 'screen-ending']) $(s).hidden = s !== id;
   }
 
   setTouch(on) {
@@ -445,6 +445,11 @@ export class UI {
     $('aura').style.opacity = level.toFixed(3);
   }
 
+  /** 時差ボケで画面の周りが暗くなる（変わったときだけ呼ぶ） */
+  doze(level) {
+    $('doze').style.opacity = level.toFixed(2);
+  }
+
   remove(a) {
     a.el.remove();
     a.dead = true;
@@ -533,6 +538,19 @@ export class UI {
   closeDialogue() {
     $('dialogue').hidden = true;
     this.dialogueOpen = false;
+  }
+
+  // --- 第1部のエンディング ---------------------------------------------------
+  /** faces: [{ key, name }]。顔アイコンが横に流れる。タップで onClose */
+  ending(faces, onClose) {
+    const track = $('ending-track');
+    const li = (cls) => faces.map((f) => `<li${cls}><img src="${this.portraits[f.key] || ''}" alt=""><span>${f.name}</span></li>`).join('');
+    // 2周ぶん並べて、半分だけ流すと継ぎ目なくループする
+    track.innerHTML = li('') + li(' class="dup" aria-hidden="true"');
+    track.style.animationDuration = `${Math.max(24, faces.length * 2.2)}s`;
+    const el = $('screen-ending');
+    el.onclick = onClose;
+    this.show('screen-ending');
   }
 
   // --- 結果 -----------------------------------------------------------------

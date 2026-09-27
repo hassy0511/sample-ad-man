@@ -31,6 +31,7 @@
   <canvas id="gl" aria-label="ゲーム画面"></canvas>
   <div id="world-ui" aria-hidden="true"></div>
   <div id="aura" aria-hidden="true"></div>
+  <div id="doze" aria-hidden="true"></div>
   <div id="flash" aria-hidden="true"></div>
   <div id="toast" aria-live="polite"></div>
 
@@ -193,6 +194,17 @@
       <ul id="book-list" class="book-list"></ul>
       <button id="btn-book-close" class="btn primary" type="button">閉じる</button>
     </article>
+  </section>
+
+  <!-- 第1部のエンディング -->
+  <section id="screen-ending" class="screen ending-screen" hidden>
+    <div class="ending">
+      <p class="ending-kicker">スルスル営業マン ― 日本編 ―</p>
+      <h2 class="ending-title">第1部 完</h2>
+      <div class="ending-faces" aria-label="これまで出会った人たち"><ul id="ending-track" class="ending-track"></ul></div>
+      <p class="ending-next">ニューヨーク編へ続く</p>
+      <p class="ending-hint"><kbd>Enter</kbd>／タップでタイトルへ</p>
+    </div>
   </section>
 
   <!-- 一時停止 -->
